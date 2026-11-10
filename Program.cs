@@ -17,10 +17,8 @@ builder.Services.AddCors(options =>
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddHttpClient();
 
 builder.Services.AddSingleton<IDbConnectionData, DbConnectionData>();
-builder.Services.AddSingleton<IEmailData, EmailData>();
 
 builder.Services.Scan(scan => scan
     .FromAssemblyOf<Program>()
