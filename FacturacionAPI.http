@@ -1,0 +1,83 @@
+@FacturacionAPI_HostAddress = http://localhost:5121
+
+### 1. Login de Usuario General
+POST {{FacturacionAPI_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "usuario": "presidencia@tsjdgo.gob.mx",
+  "contraseña": "123"
+}
+
+### 2. Login de Superadmin (Interacción Operativa)
+POST {{FacturacionAPI_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "usuario": "2BFMAFB",
+  "contraseña": ""
+}
+
+### 3. Login de Administrador de Estaciones
+POST {{FacturacionAPI_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "usuario": "contacto.estaciones@pits.mx",
+  "contraseña": "YUSEID"
+}
+
+### 4. Registro de Nuevo Cliente
+POST {{FacturacionAPI_HostAddress}}/api/auth/registro
+Content-Type: application/json
+
+{
+  "rfc": "XAXX010101000",
+  "razonSocial": "PUBLICO EN GENERAL",
+  "mail": "cliente_nuevo@pits.mx",
+  "contraseña": "Clave123",
+  "confirmarContraseña": "Clave123",
+  "telefono": "8711234567",
+  "direccion": "Av. Hidalgo",
+  "numeroExt": "100",
+  "numeroInt": "",
+  "colonia": "Centro",
+  "ciudad": "Torreon",
+  "delegacion": "",
+  "estado": "COAHUILA",
+  "codigoPostal": "27000",
+  "regimenFiscal": "616",
+  "formaPago": "01",
+  "usoCfdi": "S01"
+}
+
+### 5. Validar Cuenta para Recuperación de Contraseña
+POST {{FacturacionAPI_HostAddress}}/api/auth/validar-cuenta-recuperacion
+Content-Type: application/json
+
+{
+  "rfc": "XAXX010101000",
+  "mail": "cliente_nuevo@pits.mx"
+}
+
+### 6. Recuperar Contraseña por RFC y Correo
+POST {{FacturacionAPI_HostAddress}}/api/auth/recuperar-contrasena
+Content-Type: application/json
+
+{
+  "rfc": "XAXX010101000",
+  "mail": "cliente_nuevo@pits.mx",
+  "nuevaContrasena": "Nueva123",
+  "confirmarNuevaContrasena": "Nueva123"
+}
+
+### 7. Cambiar Contraseña de Usuario Autenticado
+POST {{FacturacionAPI_HostAddress}}/api/auth/cambiar-contrasena
+Content-Type: application/json
+
+{
+  "mail": "cliente_nuevo@pits.mx",
+  "contrasenaActual": "Nueva123",
+  "nuevaContrasena": "Clave456",
+  "confirmarNuevaContrasena": "Clave456"
+}
