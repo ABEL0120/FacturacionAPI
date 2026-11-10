@@ -290,6 +290,10 @@ namespace FacturacionAPI.DTOs
         public string TipoDeComprobante { get; set; } = "E";
         public string TipoRelacion { get; set; } = "01";
         public string UuidsRelacionados { get; set; } = string.Empty;
+        public string NoCertificado { get; set; } = string.Empty;
+        public string Certificado { get; set; } = string.Empty;
+        public string Sello { get; set; } = string.Empty;
+        public bool FirmaOmitida { get; set; }
         public decimal Subtotal { get; set; }
         public decimal Total { get; set; }
         public string CadenaOriginal { get; set; } = string.Empty;
@@ -300,7 +304,8 @@ namespace FacturacionAPI.DTOs
     {
         public bool Timbrado { get; set; }
         public string EstadoTimbrado { get; set; } = "PENDIENTE_TIMBRADOR";
-        public bool FirmaOmitida { get; set; } = true;
+        public bool FirmaOmitida { get; set; }
+        public bool UsandoOverrideLocal { get; set; }
         public bool EsPrueba { get; set; }
         public string Serie { get; set; } = string.Empty;
         public int FolioTentativo { get; set; }
@@ -313,6 +318,9 @@ namespace FacturacionAPI.DTOs
         public string TipoDeComprobante { get; set; } = "I";
         public string Exportacion { get; set; } = "01";
         public string LugarExpedicion { get; set; } = string.Empty;
+        public string NoCertificado { get; set; } = string.Empty;
+        public string Certificado { get; set; } = string.Empty;
+        public string Sello { get; set; } = string.Empty;
         public decimal Subtotal { get; set; }
         public decimal Descuento { get; set; }
         public decimal Iva { get; set; }
@@ -325,6 +333,24 @@ namespace FacturacionAPI.DTOs
         public string CadenaOriginal { get; set; } = string.Empty;
         public string XmlSinTimbrar { get; set; } = string.Empty;
         public NotaCreditoPreviaDto? NotaCreditoPrevia { get; set; }
+    }
+
+    public class FirmarCadenaRequestDto
+    {
+        [Required(ErrorMessage = "La cadena original es obligatoria.")]
+        public string CadenaOriginal { get; set; } = string.Empty;
+    }
+
+    public class FirmarCadenaResponseDto
+    {
+        public string NoCertificado { get; set; } = string.Empty;
+        public string Certificado { get; set; } = string.Empty;
+        public string Sello { get; set; } = string.Empty;
+        public bool FirmaValida { get; set; }
+        public string CadenaOriginal { get; set; } = string.Empty;
+        public string RutaLlave { get; set; } = string.Empty;
+        public string RutaCertificado { get; set; } = string.Empty;
+        public bool UsandoOverrideLocal { get; set; }
     }
 }
 

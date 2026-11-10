@@ -1,12 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using FacturacionAPI.DTOs;
 using FacturacionAPI.Models;
 using FacturacionAPI.Repositories;
+using Microsoft.Extensions.Configuration;
 using static FacturacionAPI.Helpers.ResponseHelper;
 
 namespace FacturacionAPI.Services
@@ -21,6 +24,7 @@ namespace FacturacionAPI.Services
         Task<ApiResponse<ClienteFiscalDto>> RegistrarRfcAsync(RegistrarRfcRequestDto dto);
         Task<ApiResponse<FacturaTicketResponseDto>> VistaPreviaFacturaAsync(GenerarFacturaTicketRequestDto dto);
         Task<ApiResponse<FacturaTicketResponseDto>> GenerarFacturaAsync(GenerarFacturaTicketRequestDto dto);
+        Task<ApiResponse<FirmarCadenaResponseDto>> FirmarCadenaAsync(FirmarCadenaRequestDto dto);
     }
 
     public class FactTicketService : IFactTicketService
@@ -28,15 +32,18 @@ namespace FacturacionAPI.Services
         private readonly IFactTicketRepository _factTicketRepository;
         private readonly IClienteFiscalRepository _clienteFiscalRepository;
         private readonly ICatalogosSatRepository _catalogosSatRepository;
+        private readonly IConfiguration _configuration;
 
         public FactTicketService(
             IFactTicketRepository factTicketRepository,
             IClienteFiscalRepository clienteFiscalRepository,
-            ICatalogosSatRepository catalogosSatRepository)
+            ICatalogosSatRepository catalogosSatRepository,
+            IConfiguration configuration)
         {
             _factTicketRepository = factTicketRepository;
             _clienteFiscalRepository = clienteFiscalRepository;
             _catalogosSatRepository = catalogosSatRepository;
+            _configuration = configuration;
         }
 
         public async Task<ApiResponse<FactTicketInitResponseDto>> InicializarAsync(int numeroCliente, string? rfcSeleccionado = null)
@@ -551,7 +558,7 @@ namespace FacturacionAPI.Services
                 }
             }
 
-            if (string.IsNullOrWhiteSpace(formaPagoSat))
+            if (actualizarCliente && string.IsNullOrWhiteSpace(formaPagoSat))
             {
                 return new ApiResponse<FacturaTicketResponseDto>
                 {
@@ -585,6 +592,7 @@ namespace FacturacionAPI.Services
                 await _clienteFiscalRepository.ActualizarDatosFiscalesAsync(cliente);
             }
 
+            var configCert = ResolverConfiguracionCertificado(compania);
             int folioTentativo = await _factTicketRepository.ObtenerSiguienteFolioPreviewAsync(serieFactura);
 
             var fac = new Factura40
@@ -594,7 +602,7 @@ namespace FacturacionAPI.Services
                 Fecha = DateTime.Now,
                 FormaPago = formaPagoSat,
                 FormaPagoDesc = formaPagoDesc,
-                NoCertificado = compania.Numero_Certificado.Trim(),
+                NoCertificado = configCert.NumeroCertificado,
                 CondicionesDePago = string.Empty,
                 Moneda = moneda.Numero,
                 MonedaDesc = Regex.Replace(moneda.Descripcion, " {2,}", " "),
@@ -615,9 +623,9 @@ namespace FacturacionAPI.Services
                 EmisorNumInt = compania.Num_Int.Trim(),
                 EmisorPais = compania.Pais.Trim(),
                 EmisorDelegacion = compania.Delegacion.Trim(),
-                UbicaLlave = compania.Ubica_Llave.Trim(),
-                UbicaCertificado = compania.Ubica_Certificado.Trim(),
-                CertificadoPassword = compania.A_Password,
+                UbicaLlave = configCert.UbicaLlave,
+                UbicaCertificado = configCert.UbicaCertificado,
+                CertificadoPassword = configCert.Password,
                 EmisorRegimenFiscal = compania.CveRegimenFiscal.Trim(),
                 EmisorRegimenFiscalDesc = compania.RegimenFiscalDesc.Trim(),
                 RecepRFC = rfc,
@@ -696,6 +704,15 @@ namespace FacturacionAPI.Services
             }
 
             fac.CreaCadenaOriginal();
+            if (!fac.CreaFirma(out string errorFirma))
+            {
+                return new ApiResponse<FacturaTicketResponseDto>
+                {
+                    Success = false,
+                    Message = errorFirma
+                };
+            }
+
             fac.M_Letras = Factura40.NumALetras(fac.Total, fac.MonedaDesc, fac.Moneda);
             string xmlSinTimbrar = fac.CreaXml();
 
@@ -706,20 +723,33 @@ namespace FacturacionAPI.Services
 
             if (partidasGlobales.Count > 0)
             {
-                notaCreditoPrevia = await ConstruirNotaCreditoPreviaAsync(
+                var resultadoNc = await ConstruirNotaCreditoPreviaAsync(
                     compania,
+                    configCert,
                     partidasGlobales,
                     formaPagoSat,
                     formaPagoDesc,
                     moneda,
                     tipoCambio);
+
+                if (!resultadoNc.Success || resultadoNc.Data == null)
+                {
+                    return new ApiResponse<FacturaTicketResponseDto>
+                    {
+                        Success = false,
+                        Message = resultadoNc.Message
+                    };
+                }
+
+                notaCreditoPrevia = resultadoNc.Data;
             }
 
             var responseDto = new FacturaTicketResponseDto
             {
                 Timbrado = false,
                 EstadoTimbrado = actualizarCliente ? "PENDIENTE_TIMBRADOR" : "VISTA_PREVIA",
-                FirmaOmitida = true,
+                FirmaOmitida = false,
+                UsandoOverrideLocal = configCert.UsandoOverrideLocal,
                 EsPrueba = esPrueba,
                 Serie = fac.Serie,
                 FolioTentativo = fac.Folio,
@@ -732,6 +762,9 @@ namespace FacturacionAPI.Services
                 TipoDeComprobante = fac.TipoDeComprobante,
                 Exportacion = fac.Exportacion,
                 LugarExpedicion = fac.LugarExpedicion,
+                NoCertificado = fac.NoCertificado,
+                Certificado = fac.Certificado,
+                Sello = fac.Sello,
                 Subtotal = fac.SubTotal,
                 Descuento = fac.Descuento,
                 Iva = Math.Round(fac.TotalImpuestosTrasladados, 2, MidpointRounding.AwayFromZero),
@@ -787,8 +820,8 @@ namespace FacturacionAPI.Services
             };
 
             string msg = actualizarCliente
-                ? "Estructura CFDI 4.0 generada y datos fiscales actualizados. Pendiente firma y timbrado hasta contar con datos del timbrador."
-                : "Vista previa CFDI 4.0 generada correctamente sin firma ni timbrado.";
+                ? "Estructura CFDI 4.0 generada, firmada con CreaFirma y datos fiscales actualizados. Pendiente timbrado hasta contar con datos del timbrador."
+                : "Vista previa CFDI 4.0 generada y firmada con CreaFirma correctamente sin timbrado.";
 
             return new ApiResponse<FacturaTicketResponseDto>
             {
@@ -798,8 +831,126 @@ namespace FacturacionAPI.Services
             };
         }
 
-        private async Task<NotaCreditoPreviaDto> ConstruirNotaCreditoPreviaAsync(
+        public async Task<ApiResponse<FirmarCadenaResponseDto>> FirmarCadenaAsync(FirmarCadenaRequestDto dto)
+        {
+            if (string.IsNullOrWhiteSpace(dto.CadenaOriginal))
+            {
+                return new ApiResponse<FirmarCadenaResponseDto>
+                {
+                    Success = false,
+                    Message = "La cadena original es obligatoria."
+                };
+            }
+
+            var compania = await _factTicketRepository.ObtenerCompaniaActivaAsync();
+            if (compania == null)
+            {
+                return new ApiResponse<FirmarCadenaResponseDto>
+                {
+                    Success = false,
+                    Message = "No se encontró configuración de la compañía emisora."
+                };
+            }
+
+            var configCert = ResolverConfiguracionCertificado(compania);
+
+            var fac = new Factura40
+            {
+                CadenaOriginal = dto.CadenaOriginal.Trim(),
+                NoCertificado = configCert.NumeroCertificado,
+                UbicaLlave = configCert.UbicaLlave,
+                UbicaCertificado = configCert.UbicaCertificado,
+                CertificadoPassword = configCert.Password
+            };
+
+            if (!fac.CreaFirma(out string errorFirma))
+            {
+                return new ApiResponse<FirmarCadenaResponseDto>
+                {
+                    Success = false,
+                    Message = errorFirma
+                };
+            }
+
+            bool firmaValida = fac.VerificarFirma(out _);
+
+            return new ApiResponse<FirmarCadenaResponseDto>
+            {
+                Success = true,
+                Message = "Cadena original firmada correctamente.",
+                Data = new FirmarCadenaResponseDto
+                {
+                    NoCertificado = fac.NoCertificado,
+                    Certificado = fac.Certificado,
+                    Sello = fac.Sello,
+                    FirmaValida = firmaValida,
+                    CadenaOriginal = fac.CadenaOriginal,
+                    RutaLlave = fac.UbicaLlave,
+                    RutaCertificado = fac.UbicaCertificado,
+                    UsandoOverrideLocal = configCert.UsandoOverrideLocal
+                }
+            };
+        }
+
+        private (string UbicaLlave, string UbicaCertificado, string Password, string NumeroCertificado, bool UsandoOverrideLocal) ResolverConfiguracionCertificado(Compania compania)
+        {
+            bool overrideHabilitado = _configuration.GetValue<bool>("CertificadoLocalOverride:Habilitado");
+            string ubicaLlave = compania.Ubica_Llave.Trim();
+            string ubicaCert = compania.Ubica_Certificado.Trim();
+            string password = compania.A_Password;
+            string numeroCert = compania.Numero_Certificado.Trim();
+
+            if (!overrideHabilitado)
+            {
+                return (ubicaLlave, ubicaCert, password, numeroCert, false);
+            }
+
+            string? ovLlave = _configuration["CertificadoLocalOverride:UbicaLlave"];
+            string? ovCert = _configuration["CertificadoLocalOverride:UbicaCertificado"];
+            string? ovPass = _configuration["CertificadoLocalOverride:Password"];
+            string? ovNoCert = _configuration["CertificadoLocalOverride:NumeroCertificado"];
+
+            if (!string.IsNullOrWhiteSpace(ovLlave))
+            {
+                ubicaLlave = ovLlave.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(ovCert))
+            {
+                ubicaCert = ovCert.Trim();
+            }
+
+            if (!string.IsNullOrEmpty(ovPass))
+            {
+                password = ovPass;
+            }
+
+            if (!string.IsNullOrWhiteSpace(ovNoCert))
+            {
+                if (ovNoCert.Trim().Equals("AUTO", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (File.Exists(ubicaCert))
+                    {
+                        using var cert = new X509Certificate2(ubicaCert);
+                        string serial = Factura40.ExtraerNumeroCertificado(cert);
+                        if (!string.IsNullOrWhiteSpace(serial))
+                        {
+                            numeroCert = serial;
+                        }
+                    }
+                }
+                else
+                {
+                    numeroCert = ovNoCert.Trim();
+                }
+            }
+
+            return (ubicaLlave, ubicaCert, password, numeroCert, true);
+        }
+
+        private async Task<(bool Success, string Message, NotaCreditoPreviaDto? Data)> ConstruirNotaCreditoPreviaAsync(
             Compania compania,
+            (string UbicaLlave, string UbicaCertificado, string Password, string NumeroCertificado, bool UsandoOverrideLocal) configCert,
             List<OrdenTicketDetalle> partidasGlobales,
             string formaPagoSat,
             string formaPagoDesc,
@@ -820,7 +971,10 @@ namespace FacturacionAPI.Services
                 Fecha = DateTime.Now,
                 FormaPago = formaPagoSat,
                 FormaPagoDesc = formaPagoDesc,
-                NoCertificado = compania.Numero_Certificado.Trim(),
+                NoCertificado = configCert.NumeroCertificado,
+                UbicaLlave = configCert.UbicaLlave,
+                UbicaCertificado = configCert.UbicaCertificado,
+                CertificadoPassword = configCert.Password,
                 Moneda = moneda.Numero,
                 MonedaDesc = Regex.Replace(moneda.Descripcion, " {2,}", " "),
                 TipoCambio = tipoCambio,
@@ -890,20 +1044,29 @@ namespace FacturacionAPI.Services
             }
 
             nc.CreaCadenaOriginal();
+            if (!nc.CreaFirma(out string errorFirma))
+            {
+                return (false, errorFirma, null);
+            }
+
             string xmlNc = nc.CreaXml();
 
-            return new NotaCreditoPreviaDto
+            return (true, string.Empty, new NotaCreditoPreviaDto
             {
                 Serie = nc.Serie,
                 FolioTentativo = nc.Folio,
                 TipoDeComprobante = nc.TipoDeComprobante,
                 TipoRelacion = nc.TipoRelacion,
                 UuidsRelacionados = nc.UuidRelacionados,
+                NoCertificado = nc.NoCertificado,
+                Certificado = nc.Certificado,
+                Sello = nc.Sello,
+                FirmaOmitida = false,
                 Subtotal = nc.SubTotal,
                 Total = nc.Total,
                 CadenaOriginal = nc.CadenaOriginal,
                 XmlSinTimbrar = xmlNc
-            };
+            });
         }
 
         private async Task<ApiResponse<TicketConsultaResponseDto>> ObtenerYValidarTicketIndividualAsync(

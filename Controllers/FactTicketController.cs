@@ -257,6 +257,38 @@ namespace FacturacionAPI.Controllers
                 });
             }
         }
+
+        [HttpPost("firmar-cadena")]
+        [ProducesResponseType(typeof(ApiResponse<FirmarCadenaResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<FirmarCadenaResponseDto>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<FirmarCadenaResponseDto>), StatusCodes.Status500InternalServerError)]
+        public async Task<IActionResult> FirmarCadena([FromBody] FirmarCadenaRequestDto dto)
+        {
+            try
+            {
+                if (!ModelState.IsValid)
+                {
+                    var errores = string.Join(" | ", ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage));
+                    return BadRequest(new ApiResponse<FirmarCadenaResponseDto> { Success = false, Message = errores });
+                }
+
+                var respuesta = await _factTicketService.FirmarCadenaAsync(dto);
+                if (!respuesta.Success)
+                {
+                    return BadRequest(respuesta);
+                }
+
+                return Ok(respuesta);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, new ApiResponse<FirmarCadenaResponseDto>
+                {
+                    Success = false,
+                    Message = ex.Message
+                });
+            }
+        }
     }
 }
 

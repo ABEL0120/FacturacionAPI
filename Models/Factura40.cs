@@ -366,9 +366,15 @@ namespace FacturacionAPI.Models
         {
             mensajeError = string.Empty;
 
+            if (string.IsNullOrWhiteSpace(CadenaOriginal))
+            {
+                mensajeError = "La cadena original está vacía.";
+                return false;
+            }
+
             if (string.IsNullOrWhiteSpace(UbicaLlave) || !File.Exists(UbicaLlave))
             {
-                mensajeError = "El key del certificado no existe en el directorio.";
+                mensajeError = "El key del certificado, no existe en el directorio.";
                 return false;
             }
 
@@ -383,36 +389,136 @@ namespace FacturacionAPI.Models
                 byte[] bytesCadena = Encoding.UTF8.GetBytes(CadenaOriginal);
                 if (bytesCadena.Length == 0)
                 {
-                    mensajeError = "La cadena original está vacía.";
+                    mensajeError = "Error al realizar la digestión.";
                     return false;
                 }
 
                 using var cert = new X509Certificate2(UbicaCertificado);
-                DateTime ahora = DateTime.Now;
-                if (ahora < cert.NotBefore || ahora > cert.NotAfter)
+                DateTime ahoraUtc = DateTime.UtcNow;
+                if (ahoraUtc < cert.NotBefore.ToUniversalTime() || ahoraUtc > cert.NotAfter.ToUniversalTime())
                 {
                     mensajeError = "Error, el certificado ya caducó.";
                     return false;
                 }
 
+                string password = CertificadoPassword ?? string.Empty;
                 byte[] keyBytes = File.ReadAllBytes(UbicaLlave);
+
                 using var rsa = RSA.Create();
-                rsa.ImportEncryptedPkcs8PrivateKey(Encoding.UTF8.GetBytes(CertificadoPassword ?? string.Empty), keyBytes, out _);
+                ImportarLlavePrivada(rsa, keyBytes, password);
 
                 byte[] firma = rsa.SignData(bytesCadena, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-                Sello = Convert.ToBase64String(firma);
+                if (firma.Length == 0)
+                {
+                    mensajeError = "Error al realizar firma.";
+                    return false;
+                }
+
+                using var rsaPublica = cert.GetRSAPublicKey();
+                if (rsaPublica == null || !rsaPublica.VerifyData(bytesCadena, firma, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1))
+                {
+                    mensajeError = "La llave privada (.key) no corresponde al certificado (.cer) asociado.";
+                    return false;
+                }
+
+                if (string.IsNullOrWhiteSpace(NoCertificado))
+                {
+                    NoCertificado = ExtraerNumeroCertificado(cert);
+                }
+
                 Certificado = Convert.ToBase64String(cert.RawData);
+                Sello = Convert.ToBase64String(firma);
                 return true;
             }
             catch (CryptographicException)
             {
-                mensajeError = "Error al leer la clave privada. Tal vez el password no corresponde al archivo .key asociado.";
+                mensajeError = "Error al leer la clave privada. Tal vez el Password no corresponde al archivo .key asociado.";
                 return false;
             }
             catch (Exception ex)
             {
                 mensajeError = $"Error al realizar firma: {ex.Message}";
                 return false;
+            }
+        }
+
+        public bool VerificarFirma(out string mensajeError)
+        {
+            mensajeError = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(UbicaCertificado) || !File.Exists(UbicaCertificado))
+            {
+                mensajeError = "El archivo .cer del certificado no existe en el directorio.";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(CadenaOriginal) || string.IsNullOrWhiteSpace(Sello))
+            {
+                mensajeError = "La cadena original o el sello están vacíos.";
+                return false;
+            }
+
+            try
+            {
+                using var cert = new X509Certificate2(UbicaCertificado);
+                using var rsaPublica = cert.GetRSAPublicKey();
+                if (rsaPublica == null)
+                {
+                    mensajeError = "El certificado no contiene llave pública RSA.";
+                    return false;
+                }
+
+                byte[] bytesCadena = Encoding.UTF8.GetBytes(CadenaOriginal);
+                byte[] firma = Convert.FromBase64String(Sello);
+                bool valido = rsaPublica.VerifyData(bytesCadena, firma, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+                if (!valido)
+                {
+                    mensajeError = "El sello generado no coincide con la llave pública del certificado.";
+                }
+
+                return valido;
+            }
+            catch (Exception ex)
+            {
+                mensajeError = $"Error al verificar la firma: {ex.Message}";
+                return false;
+            }
+        }
+
+        public static string ExtraerNumeroCertificado(X509Certificate2 cert)
+        {
+            string hex = cert.SerialNumber;
+            if (string.IsNullOrWhiteSpace(hex) || hex.Length % 2 != 0)
+            {
+                return string.Empty;
+            }
+
+            var sb = new StringBuilder(hex.Length / 2);
+            for (int i = 0; i < hex.Length; i += 2)
+            {
+                sb.Append((char)Convert.ToByte(hex.Substring(i, 2), 16));
+            }
+
+            return sb.ToString().Trim();
+        }
+
+        private static void ImportarLlavePrivada(RSA rsa, byte[] keyBytes, string password)
+        {
+            string inicioTexto = Encoding.ASCII.GetString(keyBytes, 0, Math.Min(keyBytes.Length, 32));
+            if (inicioTexto.StartsWith("-----", StringComparison.Ordinal))
+            {
+                string pem = Encoding.UTF8.GetString(keyBytes);
+                rsa.ImportFromEncryptedPem(pem, password.AsSpan());
+                return;
+            }
+
+            try
+            {
+                rsa.ImportEncryptedPkcs8PrivateKey(Encoding.UTF8.GetBytes(password), keyBytes, out _);
+            }
+            catch (CryptographicException)
+            {
+                rsa.ImportEncryptedPkcs8PrivateKey(Encoding.Latin1.GetBytes(password), keyBytes, out _);
             }
         }
 
