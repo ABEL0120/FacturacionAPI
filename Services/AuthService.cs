@@ -54,7 +54,8 @@ namespace FacturacionAPI.Services
                         Telefono = string.Empty,
                         EsAdmin = false,
                         EsBfmafb = true,
-                        EsUsuario = false
+                        EsUsuario = false,
+                        ModuloDestino = "Menu"
                     }
                 };
             }
@@ -75,7 +76,8 @@ namespace FacturacionAPI.Services
                         Telefono = accesoAdmin?.Telefono ?? string.Empty,
                         EsAdmin = true,
                         EsBfmafb = false,
-                        EsUsuario = false
+                        EsUsuario = false,
+                        ModuloDestino = "Menu"
                     }
                 };
             }
@@ -112,7 +114,8 @@ namespace FacturacionAPI.Services
                     Telefono = acceso.Telefono,
                     EsAdmin = false,
                     EsBfmafb = false,
-                    EsUsuario = true
+                    EsUsuario = true,
+                    ModuloDestino = "CFDI40_FactTicket"
                 }
             };
         }
@@ -207,7 +210,8 @@ namespace FacturacionAPI.Services
                     Telefono = nuevoAcceso.Telefono,
                     EsAdmin = false,
                     EsBfmafb = false,
-                    EsUsuario = true
+                    EsUsuario = true,
+                    ModuloDestino = "CFDI40_FactTicket"
                 }
             };
         }

@@ -32,6 +32,7 @@ namespace FacturacionAPI.DTOs
         public bool EsAdmin { get; set; }
         public bool EsBfmafb { get; set; }
         public bool EsUsuario { get; set; }
+        public string ModuloDestino { get; set; } = string.Empty;
     }
 
     public class RegistroClienteRequestDto
