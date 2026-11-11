@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using Dapper;
@@ -8,6 +10,46 @@ using FacturacionAPI.Models;
 
 namespace FacturacionAPI.Repositories
 {
+    public class RegistroCfdiPersistenciaData
+    {
+        public string Serie { get; set; } = string.Empty;
+        public int Folio { get; set; }
+        public int IdCliente { get; set; }
+        public string UsoCfdi { get; set; } = string.Empty;
+        public string Moneda { get; set; } = "MXN";
+        public string TipoDeComprobante { get; set; } = "I";
+        public string VersionCfdi { get; set; } = "4.0";
+        public string EsPrueba { get; set; } = "N";
+        public decimal SubTotal { get; set; }
+        public decimal IvaImporte { get; set; }
+        public decimal Total { get; set; }
+        public string FormaPago { get; set; } = string.Empty;
+        public string MetodoPago { get; set; } = "PUE";
+        public string SatTipoRelacion { get; set; } = string.Empty;
+        public string UuidRelacionados { get; set; } = string.Empty;
+        public string Fecha { get; set; } = string.Empty;
+        public decimal TipoCambio { get; set; } = 1m;
+        public string SatExportacion { get; set; } = "01";
+        public int Orden { get; set; }
+        public int Sucursal { get; set; }
+        public string OrdenFecha { get; set; } = string.Empty;
+        public string RfcReceptor { get; set; } = string.Empty;
+        public string RelGlobal { get; set; } = string.Empty;
+        public decimal BaseIva16 { get; set; }
+        public decimal BaseIva0 { get; set; }
+        public decimal PagoTotalVale { get; set; }
+    }
+
+    public class RegistrarFacturaResultado
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public string IdCfdiFactura { get; set; } = string.Empty;
+        public int FolioFactura { get; set; }
+        public string IdCfdiNotaCredito { get; set; } = string.Empty;
+        public int FolioNotaCredito { get; set; }
+    }
+
     public interface IFactTicketRepository
     {
         Task<Compania?> ObtenerCompaniaActivaAsync();
@@ -17,6 +59,12 @@ namespace FacturacionAPI.Repositories
         Task<string?> ObtenerSerieFacturaSucursalAsync(int sucursal);
         Task<string?> VerificarFolioYaTimbradoIndividualAsync(string folio);
         Task<int> ObtenerSiguienteFolioPreviewAsync(string serie);
+        Task<RegistrarFacturaResultado> RegistrarFacturaGeneradaAsync(
+            string serieFactura,
+            string? serieNotaCredito,
+            List<OrdenTicketDetalle> partidasDetalle,
+            List<OrdenTicketDetalle> partidasGlobales,
+            Func<int, int?, (bool Success, string Message, RegistroCfdiPersistenciaData? Factura, RegistroCfdiPersistenciaData? NotaCredito)> prepararYFirmar);
     }
 
     public class FactTicketRepository : IFactTicketRepository
@@ -227,10 +275,14 @@ namespace FacturacionAPI.Repositories
             using IDbConnection conn = _dbConnectionData.CreateConnection();
             const string sql = @"SELECT TOP 1 RTRIM(a.Folio)
                                  FROM Ordenes a
-                                 LEFT JOIN CFDI_Factura c ON a.idCFDI = c.idCFDI
+                                 LEFT JOIN CFDI_Factura c ON (a.idCFDI <> '' AND c.idCFDI = a.idCFDI)
+                                                          OR (a.uuid <> '' AND c.uuid = a.uuid)
                                  WHERE a.Folio = @Folio
-                                   AND ISNULL(a.idCFDI, '') <> ''
-                                   AND ISNULL(c.EsGlobal, '') = ''";
+                                   AND ISNULL(a.Baja, '') <> '*'
+                                   AND a.Producto > 0
+                                   AND a.Tipo <> 'Servicio'
+                                   AND (ISNULL(a.idCFDI, '') <> '' OR ISNULL(a.uuid, '') <> '')
+                                   AND ISNULL(c.EsGlobal, '') <> 'S'";
             return await conn.QueryFirstOrDefaultAsync<string>(sql, new { Folio = folio });
         }
 
@@ -239,6 +291,246 @@ namespace FacturacionAPI.Repositories
             using IDbConnection conn = _dbConnectionData.CreateConnection();
             const string sql = "SELECT CAST(ISNULL(MAX(Folio), 0) + 1 AS int) FROM CFDI_Factura WHERE Serie = @Serie";
             return await conn.ExecuteScalarAsync<int>(sql, new { Serie = serie });
+        }
+
+        public async Task<RegistrarFacturaResultado> RegistrarFacturaGeneradaAsync(
+            string serieFactura,
+            string? serieNotaCredito,
+            List<OrdenTicketDetalle> partidasDetalle,
+            List<OrdenTicketDetalle> partidasGlobales,
+            Func<int, int?, (bool Success, string Message, RegistroCfdiPersistenciaData? Factura, RegistroCfdiPersistenciaData? NotaCredito)> prepararYFirmar)
+        {
+            if (partidasDetalle.Count == 0)
+            {
+                return new RegistrarFacturaResultado
+                {
+                    Success = false,
+                    Message = "No hay partidas para facturar."
+                };
+            }
+
+            using IDbConnection conn = _dbConnectionData.CreateConnection();
+            conn.Open();
+            using IDbTransaction tx = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+
+            try
+            {
+                const string sqlVerificarOrden = @"SELECT TOP 1 RTRIM(a.Folio)
+                                                   FROM Ordenes a WITH (UPDLOCK, HOLDLOCK)
+                                                   LEFT JOIN CFDI_Factura c ON (a.idCFDI <> '' AND c.idCFDI = a.idCFDI)
+                                                                            OR (a.uuid <> '' AND c.uuid = a.uuid)
+                                                   WHERE a.Sucursal = @Sucursal
+                                                     AND a.Fecha = @Fecha
+                                                     AND a.Orden = @Orden
+                                                     AND ISNULL(a.Baja, '') <> '*'
+                                                     AND a.Producto > 0
+                                                     AND a.Tipo <> 'Servicio'
+                                                     AND (ISNULL(a.idCFDI, '') <> '' OR ISNULL(a.uuid, '') <> '')
+                                                     AND ISNULL(c.EsGlobal, '') <> 'S'";
+
+                foreach (var grupoTicket in partidasDetalle.GroupBy(p => new { p.Sucursal, p.Fecha, p.Orden }))
+                {
+                    string? folioFacturado = await conn.QueryFirstOrDefaultAsync<string>(
+                        sqlVerificarOrden,
+                        new
+                        {
+                            grupoTicket.Key.Sucursal,
+                            grupoTicket.Key.Fecha,
+                            grupoTicket.Key.Orden
+                        },
+                        tx);
+
+                    if (!string.IsNullOrWhiteSpace(folioFacturado))
+                    {
+                        tx.Rollback();
+                        return new RegistrarFacturaResultado
+                        {
+                            Success = false,
+                            Message = "El Ticket ya ha sido Facturado."
+                        };
+                    }
+                }
+
+                const string sqlSiguienteFolio = @"SELECT CAST(ISNULL(MAX(Folio), 0) + 1 AS int)
+                                                   FROM CFDI_Factura WITH (UPDLOCK, HOLDLOCK)
+                                                   WHERE Serie = @Serie";
+
+                int folioFactura = await conn.ExecuteScalarAsync<int>(sqlSiguienteFolio, new { Serie = serieFactura }, tx);
+                int? folioNc = !string.IsNullOrWhiteSpace(serieNotaCredito) && partidasGlobales.Count > 0
+                    ? await conn.ExecuteScalarAsync<int>(sqlSiguienteFolio, new { Serie = serieNotaCredito }, tx)
+                    : null;
+
+                var firmado = prepararYFirmar(folioFactura, folioNc);
+                if (!firmado.Success || firmado.Factura == null)
+                {
+                    tx.Rollback();
+                    return new RegistrarFacturaResultado
+                    {
+                        Success = false,
+                        Message = firmado.Message
+                    };
+                }
+
+                const string sqlInsertCfdiFactura = @"INSERT INTO CFDI_Factura (
+                                                          idCFDI, Serie, Folio, idCliente, UsoCFDI, Moneda,
+                                                          TipoDeComprobante, Version_CFDI, Estatus_CFDI, Fecha_Timbre, uuid, Es_Prueba,
+                                                          Sub_Total, Total, Forma_Pago, Metodo_Pago, Sat_Tipo_Relacion, UUID_Relacionados,
+                                                          Tipo_Documento, Fecha, Iva_Importe, Concepto_Poliza, Tipo_Cambio, SatExportacion,
+                                                          Orden, RfcReceptor, Sucursal, Orden_Fecha, EsGlobal, Ultimo_Correo_Enviado,
+                                                          Rel_Global, Base_Iva16, Base_Iva0, Pago_Total_Vale
+                                                      ) VALUES (
+                                                          @IdCfdi, @Serie, @Folio, @IdCliente, @UsoCfdi, @Moneda,
+                                                          @TipoDeComprobante, @VersionCfdi, 0, '', '', @EsPrueba,
+                                                          @SubTotal, @Total, @FormaPago, @MetodoPago, @SatTipoRelacion, @UuidRelacionados,
+                                                          1, @Fecha, @IvaImporte, '', @TipoCambio, @SatExportacion,
+                                                          @Orden, @RfcReceptor, @Sucursal, @OrdenFecha, '', '',
+                                                          @RelGlobal, @BaseIva16, @BaseIva0, @PagoTotalVale
+                                                      )";
+
+                string idCfdiNc = string.Empty;
+                int folioNcFinal = 0;
+
+                if (firmado.NotaCredito != null && folioNc.HasValue)
+                {
+                    idCfdiNc = ConstruirIdCfdi(firmado.NotaCredito.Serie, firmado.NotaCredito.Folio);
+                    folioNcFinal = firmado.NotaCredito.Folio;
+
+                    await conn.ExecuteAsync(sqlInsertCfdiFactura, ConstruirParametrosCfdi(idCfdiNc, firmado.NotaCredito), tx);
+
+                    const string sqlInsertRelacionados = @"INSERT INTO CFDI_Relacionados (idCFDI, UUID_Rel, satTipoRelacion)
+                                                           VALUES (@IdCfdi, @UuidRel, '01')";
+
+                    foreach (string uuidRel in partidasGlobales
+                        .Select(p => p.Uuid.Trim())
+                        .Where(u => !string.IsNullOrWhiteSpace(u))
+                        .Distinct(StringComparer.OrdinalIgnoreCase))
+                    {
+                        await conn.ExecuteAsync(
+                            sqlInsertRelacionados,
+                            new { IdCfdi = idCfdiNc, UuidRel = Recortar(uuidRel, 45) },
+                            tx);
+                    }
+
+                    const string sqlInsertCfdiDetalle = @"INSERT INTO CFDI_Detalle (idCFDI, sec, idOrdenes)
+                                                          VALUES (@IdCfdi, @Sec, @IdOrdenes)";
+
+                    int sec = 0;
+                    foreach (var partidaGlobal in partidasGlobales)
+                    {
+                        sec++;
+                        string idOrdenes = Recortar(
+                            $"{partidaGlobal.Orden}-{partidaGlobal.Numero}-{partidaGlobal.Tipo.Trim()}-{partidaGlobal.Fecha.Trim()}-{partidaGlobal.Sucursal}-{partidaGlobal.Turno}",
+                            70);
+                        await conn.ExecuteAsync(
+                            sqlInsertCfdiDetalle,
+                            new { IdCfdi = idCfdiNc, Sec = sec, IdOrdenes = idOrdenes },
+                            tx);
+                    }
+                }
+
+                string idCfdiFactura = ConstruirIdCfdi(firmado.Factura.Serie, firmado.Factura.Folio);
+                await conn.ExecuteAsync(sqlInsertCfdiFactura, ConstruirParametrosCfdi(idCfdiFactura, firmado.Factura), tx);
+
+                const string sqlActualizarOrden = @"UPDATE Ordenes
+                                                    SET idCFDI = @IdCfdi,
+                                                        uuid = ''
+                                                    WHERE Sucursal = @Sucursal
+                                                      AND Fecha = @Fecha
+                                                      AND Orden = @Orden
+                                                      AND Turno = @Turno
+                                                      AND Numero = @Numero
+                                                      AND Tipo = @Tipo
+                                                      AND ISNULL(Baja, '') <> '*'";
+
+                foreach (var partida in partidasDetalle)
+                {
+                    int actualizadas = await conn.ExecuteAsync(
+                        sqlActualizarOrden,
+                        new
+                        {
+                            IdCfdi = idCfdiFactura,
+                            partida.Sucursal,
+                            partida.Fecha,
+                            partida.Orden,
+                            partida.Turno,
+                            partida.Numero,
+                            partida.Tipo
+                        },
+                        tx);
+
+                    if (actualizadas == 0)
+                    {
+                        tx.Rollback();
+                        return new RegistrarFacturaResultado
+                        {
+                            Success = false,
+                            Message = "No se encontró el ticket para marcarlo como facturado."
+                        };
+                    }
+                }
+
+                tx.Commit();
+
+                return new RegistrarFacturaResultado
+                {
+                    Success = true,
+                    Message = string.Empty,
+                    IdCfdiFactura = idCfdiFactura,
+                    FolioFactura = firmado.Factura.Folio,
+                    IdCfdiNotaCredito = idCfdiNc,
+                    FolioNotaCredito = folioNcFinal
+                };
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+        }
+
+        private static string ConstruirIdCfdi(string serie, int folio)
+        {
+            return Recortar($"{serie.Trim()}{folio.ToString(CultureInfo.InvariantCulture)}", 30);
+        }
+
+        private static object ConstruirParametrosCfdi(string idCfdi, RegistroCfdiPersistenciaData data)
+        {
+            return new
+            {
+                IdCfdi = idCfdi,
+                Serie = Recortar(data.Serie, 20),
+                Folio = Convert.ToDouble(data.Folio),
+                data.IdCliente,
+                UsoCfdi = Recortar(data.UsoCfdi, 4),
+                Moneda = Recortar(data.Moneda, 5),
+                TipoDeComprobante = Recortar(data.TipoDeComprobante, 2),
+                VersionCfdi = Recortar(data.VersionCfdi, 5),
+                EsPrueba = Recortar(data.EsPrueba, 1),
+                SubTotal = Convert.ToDouble(data.SubTotal),
+                Total = Convert.ToDouble(data.Total),
+                FormaPago = Recortar(data.FormaPago, 3),
+                MetodoPago = Recortar(data.MetodoPago, 3),
+                SatTipoRelacion = Recortar(data.SatTipoRelacion, 5),
+                UuidRelacionados = data.UuidRelacionados ?? string.Empty,
+                Fecha = Recortar(data.Fecha, 20),
+                IvaImporte = Convert.ToDouble(data.IvaImporte),
+                TipoCambio = Convert.ToDouble(data.TipoCambio),
+                SatExportacion = Recortar(data.SatExportacion, 2),
+                data.Orden,
+                RfcReceptor = Recortar(data.RfcReceptor, 13),
+                data.Sucursal,
+                OrdenFecha = Recortar(data.OrdenFecha, 10),
+                RelGlobal = Recortar(data.RelGlobal, 45),
+                data.BaseIva16,
+                data.BaseIva0,
+                data.PagoTotalVale
+            };
+        }
+
+        private static string Recortar(string? valor, int maxLength)
+        {
+            string limpio = (valor ?? string.Empty).Trim();
+            return limpio.Length > maxLength ? limpio.Substring(0, maxLength) : limpio;
         }
     }
 }

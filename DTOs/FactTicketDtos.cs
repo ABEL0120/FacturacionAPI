@@ -285,6 +285,7 @@ namespace FacturacionAPI.DTOs
 
     public class NotaCreditoPreviaDto
     {
+        public string IdCfdi { get; set; } = string.Empty;
         public string Serie { get; set; } = string.Empty;
         public int FolioTentativo { get; set; }
         public string TipoDeComprobante { get; set; } = "E";
@@ -307,6 +308,7 @@ namespace FacturacionAPI.DTOs
         public bool FirmaOmitida { get; set; }
         public bool UsandoOverrideLocal { get; set; }
         public bool EsPrueba { get; set; }
+        public string IdCfdi { get; set; } = string.Empty;
         public string Serie { get; set; } = string.Empty;
         public int FolioTentativo { get; set; }
         public string FechaEmision { get; set; } = string.Empty;

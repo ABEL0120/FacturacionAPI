@@ -499,7 +499,7 @@ namespace FacturacionAPI.Services
                 };
             }
 
-            foreach (var folioDistinto in validacion.PartidasDetalle.Select(p => p.Folio).Distinct(StringComparer.OrdinalIgnoreCase))
+            foreach (var folioDistinto in validacion.PartidasDetalle.Select(p => p.Folio.Trim()).Distinct(StringComparer.OrdinalIgnoreCase))
             {
                 string? yaTimbrado = await _factTicketRepository.VerificarFolioYaTimbradoIndividualAsync(folioDistinto);
                 if (!string.IsNullOrWhiteSpace(yaTimbrado))
@@ -575,30 +575,11 @@ namespace FacturacionAPI.Services
             string delegacionFinal = dto.Delegacion?.Trim() ?? cliente.Delegacion;
             string estadoFinal = dto.Estado?.Trim() ?? cliente.Estado;
 
-            if (actualizarCliente)
-            {
-                cliente.Razon_Social = razonSocialFinal;
-                cliente.Direccion = direccionFinal;
-                cliente.Numero_Ext = numExtFinal;
-                cliente.Numero_Int = numIntFinal;
-                cliente.Colonia = coloniaFinal;
-                cliente.Codigo_Postal = cpFinal;
-                cliente.Estado = estadoFinal;
-                cliente.Delegacion = delegacionFinal;
-                cliente.Ciudad = ciudadFinal;
-                cliente.SAT_RegimenFiscal = regimen.Numero;
-                cliente.Sat_Uso_Cfdi = usoCfdi.Numero;
-                cliente.ValidadoReceptor = "S";
-                await _clienteFiscalRepository.ActualizarDatosFiscalesAsync(cliente);
-            }
-
             var configCert = ResolverConfiguracionCertificado(compania);
-            int folioTentativo = await _factTicketRepository.ObtenerSiguienteFolioPreviewAsync(serieFactura);
 
             var fac = new Factura40
             {
                 Serie = serieFactura,
-                Folio = folioTentativo,
                 Fecha = DateTime.Now,
                 FormaPago = formaPagoSat,
                 FormaPagoDesc = formaPagoDesc,
@@ -703,46 +684,200 @@ namespace FacturacionAPI.Services
                 }
             }
 
-            fac.CreaCadenaOriginal();
-            if (!fac.CreaFirma(out string errorFirma))
-            {
-                return new ApiResponse<FacturaTicketResponseDto>
-                {
-                    Success = false,
-                    Message = errorFirma
-                };
-            }
-
-            fac.M_Letras = Factura40.NumALetras(fac.Total, fac.MonedaDesc, fac.Moneda);
-            string xmlSinTimbrar = fac.CreaXml();
-
-            NotaCreditoPreviaDto? notaCreditoPrevia = null;
             var partidasGlobales = validacion.PartidasDetalle
                 .Where(p => !string.IsNullOrWhiteSpace(p.Uuid) && p.EsGlobal.Trim().Equals("S", StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
-            if (partidasGlobales.Count > 0)
-            {
-                var resultadoNc = await ConstruirNotaCreditoPreviaAsync(
-                    compania,
-                    configCert,
-                    partidasGlobales,
-                    formaPagoSat,
-                    formaPagoDesc,
-                    moneda,
-                    tipoCambio);
+            string serieNc = compania.Prueba.Trim().Equals("S", StringComparison.OrdinalIgnoreCase)
+                ? "PRUEBANC"
+                : (!string.IsNullOrWhiteSpace(compania.Serie_NotaCredito) ? compania.Serie_NotaCredito.Trim() : "NC");
 
-                if (!resultadoNc.Success || resultadoNc.Data == null)
+            Factura40? nc = partidasGlobales.Count > 0
+                ? CrearModeloNotaCredito(compania, configCert, serieNc, partidasGlobales, formaPagoSat, formaPagoDesc, moneda, tipoCambio)
+                : null;
+
+            string xmlSinTimbrar = string.Empty;
+            string xmlNcSinTimbrar = string.Empty;
+            string idCfdiFactura = string.Empty;
+            string idCfdiNc = string.Empty;
+
+            if (actualizarCliente)
+            {
+                string esPruebaBandera = esPrueba ? "S" : "N";
+                string relGlobal = partidasGlobales.FirstOrDefault()?.Uuid.Trim() ?? string.Empty;
+                var primeraPartidaFactura = validacion.PartidasDetalle[0];
+
+                var resultadoRegistro = await _factTicketRepository.RegistrarFacturaGeneradaAsync(
+                    serieFactura,
+                    nc != null ? serieNc : null,
+                    validacion.PartidasDetalle,
+                    partidasGlobales,
+                    (folioFacturaAsignado, folioNcAsignado) =>
+                    {
+                        RegistroCfdiPersistenciaData? datosNc = null;
+                        if (nc != null && folioNcAsignado.HasValue)
+                        {
+                            nc.Folio = folioNcAsignado.Value;
+                            nc.CreaCadenaOriginal();
+                            if (!nc.CreaFirma(out string errorNc))
+                            {
+                                return (false, errorNc, null, null);
+                            }
+
+                            xmlNcSinTimbrar = nc.CreaXml();
+                            var primeraGlobal = partidasGlobales[0];
+                            datosNc = new RegistroCfdiPersistenciaData
+                            {
+                                Serie = nc.Serie,
+                                Folio = nc.Folio,
+                                IdCliente = 0,
+                                UsoCfdi = nc.RecepUsoCFDI,
+                                Moneda = nc.Moneda,
+                                TipoDeComprobante = nc.TipoDeComprobante,
+                                VersionCfdi = nc.Version,
+                                EsPrueba = esPruebaBandera,
+                                SubTotal = nc.SubTotal,
+                                IvaImporte = Math.Round(nc.TotalImpuestosTrasladados, 2, MidpointRounding.AwayFromZero),
+                                Total = nc.Total,
+                                FormaPago = nc.FormaPago,
+                                MetodoPago = nc.MetodoPago,
+                                SatTipoRelacion = nc.TipoRelacion,
+                                UuidRelacionados = nc.UuidRelacionados,
+                                Fecha = nc.Fecha.ToString("yyyy/MM/dd HH:mm:ss", CultureInfo.InvariantCulture),
+                                TipoCambio = nc.TipoCambio,
+                                SatExportacion = nc.Exportacion,
+                                Orden = primeraGlobal.Orden,
+                                Sucursal = primeraGlobal.Sucursal,
+                                OrdenFecha = primeraGlobal.Fecha.Trim(),
+                                RfcReceptor = nc.RecepRFC,
+                                RelGlobal = relGlobal,
+                                BaseIva16 = Math.Round(partidasGlobales.Sum(p => p.Base_Iva16), 2, MidpointRounding.AwayFromZero),
+                                BaseIva0 = Math.Round(partidasGlobales.Sum(p => p.Base_Iva0), 2, MidpointRounding.AwayFromZero),
+                                PagoTotalVale = Math.Round(partidasGlobales.Sum(p => p.Pago_Total_Vale), 2, MidpointRounding.AwayFromZero)
+                            };
+                        }
+
+                        fac.Folio = folioFacturaAsignado;
+                        fac.CreaCadenaOriginal();
+                        if (!fac.CreaFirma(out string errorFirma))
+                        {
+                            return (false, errorFirma, null, null);
+                        }
+
+                        fac.M_Letras = Factura40.NumALetras(fac.Total, fac.MonedaDesc, fac.Moneda);
+                        xmlSinTimbrar = fac.CreaXml();
+
+                        var datosFactura = new RegistroCfdiPersistenciaData
+                        {
+                            Serie = fac.Serie,
+                            Folio = fac.Folio,
+                            IdCliente = cliente.Numero_Cliente,
+                            UsoCfdi = fac.RecepUsoCFDI,
+                            Moneda = fac.Moneda,
+                            TipoDeComprobante = fac.TipoDeComprobante,
+                            VersionCfdi = fac.Version,
+                            EsPrueba = esPruebaBandera,
+                            SubTotal = fac.SubTotal,
+                            IvaImporte = Math.Round(fac.TotalImpuestosTrasladados, 2, MidpointRounding.AwayFromZero),
+                            Total = fac.Total,
+                            FormaPago = fac.FormaPago,
+                            MetodoPago = fac.MetodoPago,
+                            SatTipoRelacion = string.Empty,
+                            UuidRelacionados = string.Empty,
+                            Fecha = fac.Fecha.ToString("yyyy/MM/dd HH:mm:ss", CultureInfo.InvariantCulture),
+                            TipoCambio = fac.TipoCambio,
+                            SatExportacion = fac.Exportacion,
+                            Orden = primeraPartidaFactura.Orden,
+                            Sucursal = primeraPartidaFactura.Sucursal,
+                            OrdenFecha = primeraPartidaFactura.Fecha.Trim(),
+                            RfcReceptor = fac.RecepRFC,
+                            RelGlobal = relGlobal,
+                            BaseIva16 = Math.Round(validacion.PartidasDetalle.Sum(p => p.Base_Iva16), 2, MidpointRounding.AwayFromZero),
+                            BaseIva0 = Math.Round(validacion.PartidasDetalle.Sum(p => p.Base_Iva0), 2, MidpointRounding.AwayFromZero),
+                            PagoTotalVale = Math.Round(validacion.PartidasDetalle.Sum(p => p.Pago_Total_Vale), 2, MidpointRounding.AwayFromZero)
+                        };
+
+                        return (true, string.Empty, datosFactura, datosNc);
+                    });
+
+                if (!resultadoRegistro.Success)
                 {
                     return new ApiResponse<FacturaTicketResponseDto>
                     {
                         Success = false,
-                        Message = resultadoNc.Message
+                        Message = resultadoRegistro.Message
                     };
                 }
 
-                notaCreditoPrevia = resultadoNc.Data;
+                idCfdiFactura = resultadoRegistro.IdCfdiFactura;
+                idCfdiNc = resultadoRegistro.IdCfdiNotaCredito;
+
+                cliente.Razon_Social = razonSocialFinal;
+                cliente.Direccion = direccionFinal;
+                cliente.Numero_Ext = numExtFinal;
+                cliente.Numero_Int = numIntFinal;
+                cliente.Colonia = coloniaFinal;
+                cliente.Codigo_Postal = cpFinal;
+                cliente.Estado = estadoFinal;
+                cliente.Delegacion = delegacionFinal;
+                cliente.Ciudad = ciudadFinal;
+                cliente.SAT_RegimenFiscal = regimen.Numero;
+                cliente.Sat_Uso_Cfdi = usoCfdi.Numero;
+                cliente.ValidadoReceptor = "S";
+                await _clienteFiscalRepository.ActualizarDatosFiscalesAsync(cliente);
             }
+            else
+            {
+                fac.Folio = await _factTicketRepository.ObtenerSiguienteFolioPreviewAsync(serieFactura);
+                fac.CreaCadenaOriginal();
+                if (!fac.CreaFirma(out string errorFirma))
+                {
+                    return new ApiResponse<FacturaTicketResponseDto>
+                    {
+                        Success = false,
+                        Message = errorFirma
+                    };
+                }
+
+                fac.M_Letras = Factura40.NumALetras(fac.Total, fac.MonedaDesc, fac.Moneda);
+                xmlSinTimbrar = fac.CreaXml();
+
+                if (nc != null)
+                {
+                    nc.Folio = await _factTicketRepository.ObtenerSiguienteFolioPreviewAsync(serieNc);
+                    nc.CreaCadenaOriginal();
+                    if (!nc.CreaFirma(out string errorNc))
+                    {
+                        return new ApiResponse<FacturaTicketResponseDto>
+                        {
+                            Success = false,
+                            Message = errorNc
+                        };
+                    }
+
+                    xmlNcSinTimbrar = nc.CreaXml();
+                }
+            }
+
+            NotaCreditoPreviaDto? notaCreditoPrevia = nc != null
+                ? new NotaCreditoPreviaDto
+                {
+                    IdCfdi = idCfdiNc,
+                    Serie = nc.Serie,
+                    FolioTentativo = nc.Folio,
+                    TipoDeComprobante = nc.TipoDeComprobante,
+                    TipoRelacion = nc.TipoRelacion,
+                    UuidsRelacionados = nc.UuidRelacionados,
+                    NoCertificado = nc.NoCertificado,
+                    Certificado = nc.Certificado,
+                    Sello = nc.Sello,
+                    FirmaOmitida = false,
+                    Subtotal = nc.SubTotal,
+                    Total = nc.Total,
+                    CadenaOriginal = nc.CadenaOriginal,
+                    XmlSinTimbrar = xmlNcSinTimbrar
+                }
+                : null;
 
             var responseDto = new FacturaTicketResponseDto
             {
@@ -751,6 +886,7 @@ namespace FacturacionAPI.Services
                 FirmaOmitida = false,
                 UsandoOverrideLocal = configCert.UsandoOverrideLocal,
                 EsPrueba = esPrueba,
+                IdCfdi = idCfdiFactura,
                 Serie = fac.Serie,
                 FolioTentativo = fac.Folio,
                 FechaEmision = fac.Fecha.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture),
@@ -948,26 +1084,21 @@ namespace FacturacionAPI.Services
             return (ubicaLlave, ubicaCert, password, numeroCert, true);
         }
 
-        private async Task<(bool Success, string Message, NotaCreditoPreviaDto? Data)> ConstruirNotaCreditoPreviaAsync(
+        private static Factura40 CrearModeloNotaCredito(
             Compania compania,
             (string UbicaLlave, string UbicaCertificado, string Password, string NumeroCertificado, bool UsandoOverrideLocal) configCert,
+            string serieNc,
             List<OrdenTicketDetalle> partidasGlobales,
             string formaPagoSat,
             string formaPagoDesc,
             MonedaCatalogoDto moneda,
             decimal tipoCambio)
         {
-            string serieNc = compania.Prueba.Trim().Equals("S", StringComparison.OrdinalIgnoreCase)
-                ? "PRUEBANC"
-                : (!string.IsNullOrWhiteSpace(compania.Serie_NotaCredito) ? compania.Serie_NotaCredito.Trim() : "NC");
-
-            int folioNc = await _factTicketRepository.ObtenerSiguienteFolioPreviewAsync(serieNc);
             var uuids = partidasGlobales.Select(p => p.Uuid.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
             var nc = new Factura40
             {
                 Serie = serieNc,
-                Folio = folioNc,
                 Fecha = DateTime.Now,
                 FormaPago = formaPagoSat,
                 FormaPagoDesc = formaPagoDesc,
@@ -1043,30 +1174,7 @@ namespace FacturacionAPI.Services
                 }
             }
 
-            nc.CreaCadenaOriginal();
-            if (!nc.CreaFirma(out string errorFirma))
-            {
-                return (false, errorFirma, null);
-            }
-
-            string xmlNc = nc.CreaXml();
-
-            return (true, string.Empty, new NotaCreditoPreviaDto
-            {
-                Serie = nc.Serie,
-                FolioTentativo = nc.Folio,
-                TipoDeComprobante = nc.TipoDeComprobante,
-                TipoRelacion = nc.TipoRelacion,
-                UuidsRelacionados = nc.UuidRelacionados,
-                NoCertificado = nc.NoCertificado,
-                Certificado = nc.Certificado,
-                Sello = nc.Sello,
-                FirmaOmitida = false,
-                Subtotal = nc.SubTotal,
-                Total = nc.Total,
-                CadenaOriginal = nc.CadenaOriginal,
-                XmlSinTimbrar = xmlNc
-            });
+            return nc;
         }
 
         private async Task<ApiResponse<TicketConsultaResponseDto>> ObtenerYValidarTicketIndividualAsync(
@@ -1169,7 +1277,9 @@ namespace FacturacionAPI.Services
             }
 
             var first = activas[0];
-            if (!string.IsNullOrWhiteSpace(first.Uuid) && string.IsNullOrWhiteSpace(first.EsGlobal))
+            if (activas.Any(p =>
+                (!string.IsNullOrWhiteSpace(p.Uuid) || !string.IsNullOrWhiteSpace(p.IdCFDI)) &&
+                !p.EsGlobal.Trim().Equals("S", StringComparison.OrdinalIgnoreCase)))
             {
                 return new ApiResponse<TicketConsultaResponseDto>
                 {
@@ -1330,9 +1440,11 @@ namespace FacturacionAPI.Services
                     new List<string> { consulta.Data.Folio },
                     sol.Transaccion);
 
+                int ordenSeleccionada = consulta.Data.Partidas.FirstOrDefault()?.Orden ?? 0;
                 var facturablesDetalle = detalle.Where(p =>
                     p.Sucursal == consulta.Data.Sucursal &&
                     p.Fecha == consulta.Data.Fecha &&
+                    (ordenSeleccionada == 0 || p.Orden == ordenSeleccionada) &&
                     p.Baja.Trim() != "*" &&
                     !p.Tipo.Trim().Equals("Servicio", StringComparison.OrdinalIgnoreCase)).ToList();
 
