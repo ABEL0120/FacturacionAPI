@@ -79,86 +79,30 @@ namespace FacturacionAPI.Repositories
         public async Task<Compania?> ObtenerCompaniaActivaAsync()
         {
             using IDbConnection conn = _dbConnectionData.CreateConnection();
-            const string sql = @"SELECT TOP 1
-                                        a.Numero_Compañia AS Numero_Compania,
-                                        RTRIM(ISNULL(a.Razon_Social, '')) AS Razon_Social,
-                                        RTRIM(ISNULL(a.RFC, '')) AS RFC,
-                                        RTRIM(ISNULL(a.Direccion, '')) AS Direccion,
-                                        RTRIM(ISNULL(a.Num_Ext, '')) AS Num_Ext,
-                                        RTRIM(ISNULL(a.Num_Int, '')) AS Num_Int,
-                                        RTRIM(ISNULL(a.Colonia, '')) AS Colonia,
-                                        RTRIM(ISNULL(a.Delegacion, '')) AS Delegacion,
-                                        RTRIM(ISNULL(a.Ciudad, '')) AS Ciudad,
-                                        RTRIM(ISNULL(a.Estado, '')) AS Estado,
-                                        RTRIM(ISNULL(a.Pais, '')) AS Pais,
-                                        RTRIM(ISNULL(a.CP, '')) AS CP,
-                                        RTRIM(ISNULL(a.CveRegimenFiscal, '')) AS CveRegimenFiscal,
-                                        RTRIM(ISNULL(b.Descripcion, '')) AS RegimenFiscalDesc,
-                                        RTRIM(ISNULL(a.Numero_Certificado, '')) AS Numero_Certificado,
-                                        RTRIM(ISNULL(a.Ubica_Certificado, '')) AS Ubica_Certificado,
-                                        RTRIM(ISNULL(a.Ubica_Llave, '')) AS Ubica_Llave,
-                                        RTRIM(ISNULL(a.A_Password, '')) AS A_Password,
-                                        RTRIM(ISNULL(a.Timbrado_Password, '')) AS Timbrado_Password,
-                                        RTRIM(ISNULL(a.Prueba, 'N')) AS Prueba,
-                                        RTRIM(ISNULL(a.Serie_Factura, '')) AS Serie_Factura,
-                                        RTRIM(ISNULL(a.Serie_NotaCredito, '')) AS Serie_NotaCredito,
-                                        RTRIM(ISNULL(a.Directorio_CFDI, '')) AS Directorio_CFDI,
-                                        ISNULL(a.Factura_FolioInicio, 1) AS Factura_FolioInicio
-                                 FROM [Compañias] a
-                                 LEFT JOIN SAT_REGIMEN_FISCAL b ON a.CveRegimenFiscal = b.Numero";
+            const string sql = @"SELECT TOP 1 a.Numero_Compañia AS Numero_Compania, RTRIM(ISNULL(a.Razon_Social, '')) AS Razon_Social, RTRIM(ISNULL(a.RFC, '')) AS RFC, RTRIM(ISNULL(a.Direccion, '')) AS Direccion,
+                    RTRIM(ISNULL(a.Num_Ext, '')) AS Num_Ext, RTRIM(ISNULL(a.Num_Int, '')) AS Num_Int, RTRIM(ISNULL(a.Colonia, '')) AS Colonia, RTRIM(ISNULL(a.Delegacion, '')) AS Delegacion,
+                    RTRIM(ISNULL(a.Ciudad, '')) AS Ciudad, RTRIM(ISNULL(a.Estado, '')) AS Estado, RTRIM(ISNULL(a.Pais, '')) AS Pais, RTRIM(ISNULL(a.CP, '')) AS CP,
+                    RTRIM(ISNULL(a.CveRegimenFiscal, '')) AS CveRegimenFiscal, RTRIM(ISNULL(b.Descripcion, '')) AS RegimenFiscalDesc, RTRIM(ISNULL(a.Numero_Certificado, '')) AS Numero_Certificado, RTRIM(ISNULL(a.Ubica_Certificado, '')) AS Ubica_Certificado,
+                    RTRIM(ISNULL(a.Ubica_Llave, '')) AS Ubica_Llave, RTRIM(ISNULL(a.A_Password, '')) AS A_Password, RTRIM(ISNULL(a.Timbrado_Password, '')) AS Timbrado_Password, RTRIM(ISNULL(a.Prueba, 'N')) AS Prueba,
+                    RTRIM(ISNULL(a.Serie_Factura, '')) AS Serie_Factura, RTRIM(ISNULL(a.Serie_NotaCredito, '')) AS Serie_NotaCredito, RTRIM(ISNULL(a.Directorio_CFDI, '')) AS Directorio_CFDI, ISNULL(a.Factura_FolioInicio, 1) AS Factura_FolioInicio
+                FROM [Compañias] a LEFT JOIN SAT_REGIMEN_FISCAL b ON a.CveRegimenFiscal = b.Numero";
             return await conn.QueryFirstOrDefaultAsync<Compania>(sql);
         }
 
         public async Task<List<OrdenTicketDetalle>> ObtenerPartidasPorFoliosCandidatosAsync(List<string> foliosCandidatos, int? transaccion)
         {
             using IDbConnection conn = _dbConnectionData.CreateConnection();
-            string sql = @"SELECT
-                               a.Orden,
-                               a.Numero,
-                               RTRIM(ISNULL(a.Tipo, '')) AS Tipo,
-                               RTRIM(ISNULL(a.Fecha, '')) AS Fecha,
-                               a.Sucursal,
-                               RTRIM(ISNULL(s.Nombre, '')) AS SucursalNombre,
-                               RTRIM(ISNULL(s.SerieFactura, '')) AS SerieFactura,
-                               a.Turno,
-                               RTRIM(ISNULL(a.Folio, '')) AS Folio,
-                               ISNULL(a.Transaccion, 0) AS Transaccion,
-                               a.Producto,
-                               RTRIM(ISNULL(b.Nombre, '')) AS Descripcion,
-                               RTRIM(ISNULL(b.ClaveProdServ_SAT, '')) AS ClaveProdServ_SAT,
-                               RTRIM(ISNULL(d.Descripcion, '')) AS ClaveProdServDesc,
-                               RTRIM(ISNULL(b.Unidad_Medida_SAT, '')) AS Unidad_Medida_SAT,
-                               RTRIM(ISNULL(b.Unidad_Medida, '')) AS Unidad_Medida,
-                               RTRIM(ISNULL(b.Exento, 'N')) AS Exento,
-                               CAST(ISNULL(a.Cantidad, 0) AS decimal(18,4)) AS Cantidad,
-                               CAST(ISNULL(a.Precio, 0) AS decimal(18,6)) AS Precio,
-                               CAST(ROUND(ISNULL(a.Precio, 0) / NULLIF((ISNULL(a.Porcentaje_Iva, 0) * 0.01 + 1), 0), 6) AS decimal(18,6)) AS PrecioSinIva,
-                               CAST(ISNULL(a.Subtotal, 0) AS decimal(18,4)) AS Subtotal,
-                               CAST(ISNULL(a.Iva, 0) AS decimal(18,4)) AS ImpIva,
-                               CAST(ISNULL(a.Porcentaje_Iva, 0) AS decimal(18,4)) AS Porcentaje_Iva,
-                               CAST(ISNULL(a.Pago_Total_Vale, 0) AS decimal(18,4)) AS Descuento,
-                               CAST(ISNULL(a.Total, 0) AS decimal(18,4)) AS Total,
-                               CAST(ISNULL(a.Subtotal, 0) + ISNULL(a.Iva, 0) - ISNULL(a.Pago_Total_Vale, 0) AS decimal(18,4)) AS TotalFacturar,
-                               CAST(ISNULL(a.Base_Iva16, 0) AS decimal(18,4)) AS Base_Iva16,
-                               CAST(ISNULL(a.Base_Iva0, 0) AS decimal(18,4)) AS Base_Iva0,
-                               CAST(ISNULL(a.Pago_Total_Vale, 0) AS decimal(18,4)) AS Pago_Total_Vale,
-                               RTRIM(ISNULL(a.Baja, '')) AS Baja,
-                               RTRIM(ISNULL(a.idCFDI, '')) AS IdCFDI,
-                               RTRIM(ISNULL(a.uuid, '')) AS Uuid,
-                               RTRIM(ISNULL(c.EsGlobal, '')) AS EsGlobal,
-                               RTRIM(ISNULL(c.UuidGlobal, '')) AS UuidGlobal
-                           FROM Ordenes a
-                           LEFT JOIN Productos b ON a.Producto = b.Numero
-                           LEFT JOIN Sucursal s ON a.Sucursal = s.Numero
-                           LEFT JOIN SAT_CLAVE_PROD_SERV d ON b.ClaveProdServ_SAT = d.Numero
-                           OUTER APPLY (
-                               SELECT TOP 1 cf.EsGlobal, cf.uuid AS UuidGlobal
-                               FROM CFDI_Factura cf
-                               WHERE (a.idCFDI <> '' AND cf.idCFDI = a.idCFDI)
-                                  OR (a.uuid <> '' AND cf.uuid = a.uuid)
-                           ) c
-                           WHERE a.Folio IN @Folios
-                             AND a.Producto > 0";
+            string sql = @"SELECT a.Orden, a.Numero, RTRIM(ISNULL(a.Tipo, '')) AS Tipo, RTRIM(ISNULL(a.Fecha, '')) AS Fecha, a.Sucursal, RTRIM(ISNULL(s.Nombre, '')) AS SucursalNombre,
+                    RTRIM(ISNULL(s.SerieFactura, '')) AS SerieFactura, a.Turno, RTRIM(ISNULL(a.Folio, '')) AS Folio, ISNULL(a.Transaccion, 0) AS Transaccion, a.Producto, RTRIM(ISNULL(b.Nombre, '')) AS Descripcion,
+                    RTRIM(ISNULL(b.ClaveProdServ_SAT, '')) AS ClaveProdServ_SAT, RTRIM(ISNULL(d.Descripcion, '')) AS ClaveProdServDesc, RTRIM(ISNULL(b.Unidad_Medida_SAT, '')) AS Unidad_Medida_SAT, RTRIM(ISNULL(b.Unidad_Medida, '')) AS Unidad_Medida, RTRIM(ISNULL(b.Exento, 'N')) AS Exento,
+                    CAST(ISNULL(a.Cantidad, 0) AS decimal(18,4)) AS Cantidad, CAST(ISNULL(a.Precio, 0) AS decimal(18,6)) AS Precio, CAST(ROUND(ISNULL(a.Precio, 0) / NULLIF((ISNULL(a.Porcentaje_Iva, 0) * 0.01 + 1), 0), 6) AS decimal(18,6)) AS PrecioSinIva,
+                    CAST(ISNULL(a.Subtotal, 0) AS decimal(18,4)) AS Subtotal, CAST(ISNULL(a.Iva, 0) AS decimal(18,4)) AS ImpIva, CAST(ISNULL(a.Porcentaje_Iva, 0) AS decimal(18,4)) AS Porcentaje_Iva, CAST(ISNULL(a.Pago_Total_Vale, 0) AS decimal(18,4)) AS Descuento,
+                    CAST(ISNULL(a.Total, 0) AS decimal(18,4)) AS Total, CAST(ISNULL(a.Subtotal, 0) + ISNULL(a.Iva, 0) - ISNULL(a.Pago_Total_Vale, 0) AS decimal(18,4)) AS TotalFacturar,
+                    CAST(ISNULL(a.Base_Iva16, 0) AS decimal(18,4)) AS Base_Iva16, CAST(ISNULL(a.Base_Iva0, 0) AS decimal(18,4)) AS Base_Iva0, CAST(ISNULL(a.Pago_Total_Vale, 0) AS decimal(18,4)) AS Pago_Total_Vale,
+                    RTRIM(ISNULL(a.Baja, '')) AS Baja, RTRIM(ISNULL(a.idCFDI, '')) AS IdCFDI, RTRIM(ISNULL(a.uuid, '')) AS Uuid, RTRIM(ISNULL(c.EsGlobal, '')) AS EsGlobal, RTRIM(ISNULL(c.UuidGlobal, '')) AS UuidGlobal
+                FROM Ordenes a LEFT JOIN Productos b ON a.Producto = b.Numero LEFT JOIN Sucursal s ON a.Sucursal = s.Numero LEFT JOIN SAT_CLAVE_PROD_SERV d ON b.ClaveProdServ_SAT = d.Numero
+                OUTER APPLY (SELECT TOP 1 cf.EsGlobal, cf.uuid AS UuidGlobal FROM CFDI_Factura cf WHERE (a.idCFDI <> '' AND cf.idCFDI = a.idCFDI) OR (a.uuid <> '' AND cf.uuid = a.uuid)) c
+                WHERE a.Folio IN @Folios AND a.Producto > 0";
 
             if (transaccion.HasValue && transaccion.Value > 0)
             {
@@ -178,53 +122,17 @@ namespace FacturacionAPI.Repositories
         public async Task<List<OrdenTicketDetalle>> ObtenerPartidasPorOrdenAsync(long orden, int? transaccion)
         {
             using IDbConnection conn = _dbConnectionData.CreateConnection();
-            string sql = @"SELECT
-                               a.Orden,
-                               a.Numero,
-                               RTRIM(ISNULL(a.Tipo, '')) AS Tipo,
-                               RTRIM(ISNULL(a.Fecha, '')) AS Fecha,
-                               a.Sucursal,
-                               RTRIM(ISNULL(s.Nombre, '')) AS SucursalNombre,
-                               RTRIM(ISNULL(s.SerieFactura, '')) AS SerieFactura,
-                               a.Turno,
-                               RTRIM(ISNULL(a.Folio, '')) AS Folio,
-                               ISNULL(a.Transaccion, 0) AS Transaccion,
-                               a.Producto,
-                               RTRIM(ISNULL(b.Nombre, '')) AS Descripcion,
-                               RTRIM(ISNULL(b.ClaveProdServ_SAT, '')) AS ClaveProdServ_SAT,
-                               RTRIM(ISNULL(d.Descripcion, '')) AS ClaveProdServDesc,
-                               RTRIM(ISNULL(b.Unidad_Medida_SAT, '')) AS Unidad_Medida_SAT,
-                               RTRIM(ISNULL(b.Unidad_Medida, '')) AS Unidad_Medida,
-                               RTRIM(ISNULL(b.Exento, 'N')) AS Exento,
-                               CAST(ISNULL(a.Cantidad, 0) AS decimal(18,4)) AS Cantidad,
-                               CAST(ISNULL(a.Precio, 0) AS decimal(18,6)) AS Precio,
-                               CAST(ROUND(ISNULL(a.Precio, 0) / NULLIF((ISNULL(a.Porcentaje_Iva, 0) * 0.01 + 1), 0), 6) AS decimal(18,6)) AS PrecioSinIva,
-                               CAST(ISNULL(a.Subtotal, 0) AS decimal(18,4)) AS Subtotal,
-                               CAST(ISNULL(a.Iva, 0) AS decimal(18,4)) AS ImpIva,
-                               CAST(ISNULL(a.Porcentaje_Iva, 0) AS decimal(18,4)) AS Porcentaje_Iva,
-                               CAST(ISNULL(a.Pago_Total_Vale, 0) AS decimal(18,4)) AS Descuento,
-                               CAST(ISNULL(a.Total, 0) AS decimal(18,4)) AS Total,
-                               CAST(ISNULL(a.Subtotal, 0) + ISNULL(a.Iva, 0) - ISNULL(a.Pago_Total_Vale, 0) AS decimal(18,4)) AS TotalFacturar,
-                               CAST(ISNULL(a.Base_Iva16, 0) AS decimal(18,4)) AS Base_Iva16,
-                               CAST(ISNULL(a.Base_Iva0, 0) AS decimal(18,4)) AS Base_Iva0,
-                               CAST(ISNULL(a.Pago_Total_Vale, 0) AS decimal(18,4)) AS Pago_Total_Vale,
-                               RTRIM(ISNULL(a.Baja, '')) AS Baja,
-                               RTRIM(ISNULL(a.idCFDI, '')) AS IdCFDI,
-                               RTRIM(ISNULL(a.uuid, '')) AS Uuid,
-                               RTRIM(ISNULL(c.EsGlobal, '')) AS EsGlobal,
-                               RTRIM(ISNULL(c.UuidGlobal, '')) AS UuidGlobal
-                           FROM Ordenes a
-                           LEFT JOIN Productos b ON a.Producto = b.Numero
-                           LEFT JOIN Sucursal s ON a.Sucursal = s.Numero
-                           LEFT JOIN SAT_CLAVE_PROD_SERV d ON b.ClaveProdServ_SAT = d.Numero
-                           OUTER APPLY (
-                               SELECT TOP 1 cf.EsGlobal, cf.uuid AS UuidGlobal
-                               FROM CFDI_Factura cf
-                               WHERE (a.idCFDI <> '' AND cf.idCFDI = a.idCFDI)
-                                  OR (a.uuid <> '' AND cf.uuid = a.uuid)
-                           ) c
-                           WHERE a.Orden = @Orden
-                             AND a.Producto > 0";
+            string sql = @"SELECT a.Orden, a.Numero, RTRIM(ISNULL(a.Tipo, '')) AS Tipo, RTRIM(ISNULL(a.Fecha, '')) AS Fecha, a.Sucursal, RTRIM(ISNULL(s.Nombre, '')) AS SucursalNombre,
+                    RTRIM(ISNULL(s.SerieFactura, '')) AS SerieFactura, a.Turno, RTRIM(ISNULL(a.Folio, '')) AS Folio, ISNULL(a.Transaccion, 0) AS Transaccion, a.Producto, RTRIM(ISNULL(b.Nombre, '')) AS Descripcion,
+                    RTRIM(ISNULL(b.ClaveProdServ_SAT, '')) AS ClaveProdServ_SAT, RTRIM(ISNULL(d.Descripcion, '')) AS ClaveProdServDesc, RTRIM(ISNULL(b.Unidad_Medida_SAT, '')) AS Unidad_Medida_SAT, RTRIM(ISNULL(b.Unidad_Medida, '')) AS Unidad_Medida, RTRIM(ISNULL(b.Exento, 'N')) AS Exento,
+                    CAST(ISNULL(a.Cantidad, 0) AS decimal(18,4)) AS Cantidad, CAST(ISNULL(a.Precio, 0) AS decimal(18,6)) AS Precio, CAST(ROUND(ISNULL(a.Precio, 0) / NULLIF((ISNULL(a.Porcentaje_Iva, 0) * 0.01 + 1), 0), 6) AS decimal(18,6)) AS PrecioSinIva,
+                    CAST(ISNULL(a.Subtotal, 0) AS decimal(18,4)) AS Subtotal, CAST(ISNULL(a.Iva, 0) AS decimal(18,4)) AS ImpIva, CAST(ISNULL(a.Porcentaje_Iva, 0) AS decimal(18,4)) AS Porcentaje_Iva, CAST(ISNULL(a.Pago_Total_Vale, 0) AS decimal(18,4)) AS Descuento,
+                    CAST(ISNULL(a.Total, 0) AS decimal(18,4)) AS Total, CAST(ISNULL(a.Subtotal, 0) + ISNULL(a.Iva, 0) - ISNULL(a.Pago_Total_Vale, 0) AS decimal(18,4)) AS TotalFacturar,
+                    CAST(ISNULL(a.Base_Iva16, 0) AS decimal(18,4)) AS Base_Iva16, CAST(ISNULL(a.Base_Iva0, 0) AS decimal(18,4)) AS Base_Iva0, CAST(ISNULL(a.Pago_Total_Vale, 0) AS decimal(18,4)) AS Pago_Total_Vale,
+                    RTRIM(ISNULL(a.Baja, '')) AS Baja, RTRIM(ISNULL(a.idCFDI, '')) AS IdCFDI, RTRIM(ISNULL(a.uuid, '')) AS Uuid, RTRIM(ISNULL(c.EsGlobal, '')) AS EsGlobal, RTRIM(ISNULL(c.UuidGlobal, '')) AS UuidGlobal
+                FROM Ordenes a LEFT JOIN Productos b ON a.Producto = b.Numero LEFT JOIN Sucursal s ON a.Sucursal = s.Numero LEFT JOIN SAT_CLAVE_PROD_SERV d ON b.ClaveProdServ_SAT = d.Numero
+                OUTER APPLY (SELECT TOP 1 cf.EsGlobal, cf.uuid AS UuidGlobal FROM CFDI_Factura cf WHERE (a.idCFDI <> '' AND cf.idCFDI = a.idCFDI) OR (a.uuid <> '' AND cf.uuid = a.uuid)) c
+                WHERE a.Orden = @Orden AND a.Producto > 0";
 
             if (transaccion.HasValue && transaccion.Value > 0)
             {
@@ -244,17 +152,9 @@ namespace FacturacionAPI.Repositories
         public async Task<FormaPagoOrdenInfo?> ObtenerFormaPagoOrdenAsync(int sucursal, int orden, string fecha)
         {
             using IDbConnection conn = _dbConnectionData.CreateConnection();
-            const string sql = @"SELECT TOP 1
-                                        b.Forma_Pago,
-                                        RTRIM(ISNULL(a.Forma_Pago_SAT, '')) AS Forma_Pago_SAT,
-                                        RTRIM(ISNULL(sfp.Descripcion, '')) AS FormaPago_Desc,
-                                        RTRIM(ISNULL(b.Forma_Pago_Descripcion, '')) AS Forma_Pago_Descripcion
-                                 FROM Ordenes_Pagos b
-                                 LEFT JOIN Forma_Pago a ON a.Numero = b.Forma_Pago
-                                 LEFT JOIN SAT_FORMA_PAGO sfp ON sfp.Numero = a.Forma_Pago_SAT
-                                 WHERE b.Sucursal = @Sucursal
-                                   AND b.Orden = @Orden
-                                   AND b.Fecha = @Fecha";
+            const string sql = @"SELECT TOP 1 b.Forma_Pago, RTRIM(ISNULL(a.Forma_Pago_SAT, '')) AS Forma_Pago_SAT, RTRIM(ISNULL(sfp.Descripcion, '')) AS FormaPago_Desc, RTRIM(ISNULL(b.Forma_Pago_Descripcion, '')) AS Forma_Pago_Descripcion
+                FROM Ordenes_Pagos b LEFT JOIN Forma_Pago a ON a.Numero = b.Forma_Pago LEFT JOIN SAT_FORMA_PAGO sfp ON sfp.Numero = a.Forma_Pago_SAT
+                WHERE b.Sucursal = @Sucursal AND b.Orden = @Orden AND b.Fecha = @Fecha";
             return await conn.QueryFirstOrDefaultAsync<FormaPagoOrdenInfo>(sql, new
             {
                 Sucursal = sucursal,
@@ -273,16 +173,9 @@ namespace FacturacionAPI.Repositories
         public async Task<string?> VerificarFolioYaTimbradoIndividualAsync(string folio)
         {
             using IDbConnection conn = _dbConnectionData.CreateConnection();
-            const string sql = @"SELECT TOP 1 RTRIM(a.Folio)
-                                 FROM Ordenes a
-                                 LEFT JOIN CFDI_Factura c ON (a.idCFDI <> '' AND c.idCFDI = a.idCFDI)
-                                                          OR (a.uuid <> '' AND c.uuid = a.uuid)
-                                 WHERE a.Folio = @Folio
-                                   AND ISNULL(a.Baja, '') <> '*'
-                                   AND a.Producto > 0
-                                   AND a.Tipo <> 'Servicio'
-                                   AND (ISNULL(a.idCFDI, '') <> '' OR ISNULL(a.uuid, '') <> '')
-                                   AND ISNULL(c.EsGlobal, '') <> 'S'";
+            const string sql = @"SELECT TOP 1 RTRIM(a.Folio) FROM Ordenes a
+                LEFT JOIN CFDI_Factura c ON (a.idCFDI <> '' AND c.idCFDI = a.idCFDI) OR (a.uuid <> '' AND c.uuid = a.uuid)
+                WHERE a.Folio = @Folio AND ISNULL(a.Baja, '') <> '*' AND a.Producto > 0 AND a.Tipo <> 'Servicio' AND (ISNULL(a.idCFDI, '') <> '' OR ISNULL(a.uuid, '') <> '') AND ISNULL(c.EsGlobal, '') <> 'S'";
             return await conn.QueryFirstOrDefaultAsync<string>(sql, new { Folio = folio });
         }
 
@@ -315,18 +208,9 @@ namespace FacturacionAPI.Repositories
 
             try
             {
-                const string sqlVerificarOrden = @"SELECT TOP 1 RTRIM(a.Folio)
-                                                   FROM Ordenes a WITH (UPDLOCK, HOLDLOCK)
-                                                   LEFT JOIN CFDI_Factura c ON (a.idCFDI <> '' AND c.idCFDI = a.idCFDI)
-                                                                            OR (a.uuid <> '' AND c.uuid = a.uuid)
-                                                   WHERE a.Sucursal = @Sucursal
-                                                     AND a.Fecha = @Fecha
-                                                     AND a.Orden = @Orden
-                                                     AND ISNULL(a.Baja, '') <> '*'
-                                                     AND a.Producto > 0
-                                                     AND a.Tipo <> 'Servicio'
-                                                     AND (ISNULL(a.idCFDI, '') <> '' OR ISNULL(a.uuid, '') <> '')
-                                                     AND ISNULL(c.EsGlobal, '') <> 'S'";
+                const string sqlVerificarOrden = @"SELECT TOP 1 RTRIM(a.Folio) FROM Ordenes a WITH (UPDLOCK, HOLDLOCK)
+                    LEFT JOIN CFDI_Factura c ON (a.idCFDI <> '' AND c.idCFDI = a.idCFDI) OR (a.uuid <> '' AND c.uuid = a.uuid)
+                    WHERE a.Sucursal = @Sucursal AND a.Fecha = @Fecha AND a.Orden = @Orden AND ISNULL(a.Baja, '') <> '*' AND a.Producto > 0 AND a.Tipo <> 'Servicio' AND (ISNULL(a.idCFDI, '') <> '' OR ISNULL(a.uuid, '') <> '') AND ISNULL(c.EsGlobal, '') <> 'S'";
 
                 foreach (var grupoTicket in partidasDetalle.GroupBy(p => new { p.Sucursal, p.Fecha, p.Orden }))
                 {
@@ -352,8 +236,7 @@ namespace FacturacionAPI.Repositories
                 }
 
                 const string sqlSiguienteFolio = @"SELECT CAST(ISNULL(MAX(Folio), 0) + 1 AS int)
-                                                   FROM CFDI_Factura WITH (UPDLOCK, HOLDLOCK)
-                                                   WHERE Serie = @Serie";
+                    FROM CFDI_Factura WITH (UPDLOCK, HOLDLOCK) WHERE Serie = @Serie";
 
                 int folioFactura = await conn.ExecuteScalarAsync<int>(sqlSiguienteFolio, new { Serie = serieFactura }, tx);
                 int? folioNc = !string.IsNullOrWhiteSpace(serieNotaCredito) && partidasGlobales.Count > 0
@@ -371,21 +254,12 @@ namespace FacturacionAPI.Repositories
                     };
                 }
 
-                const string sqlInsertCfdiFactura = @"INSERT INTO CFDI_Factura (
-                                                          idCFDI, Serie, Folio, idCliente, UsoCFDI, Moneda,
-                                                          TipoDeComprobante, Version_CFDI, Estatus_CFDI, Fecha_Timbre, uuid, Es_Prueba,
-                                                          Sub_Total, Total, Forma_Pago, Metodo_Pago, Sat_Tipo_Relacion, UUID_Relacionados,
-                                                          Tipo_Documento, Fecha, Iva_Importe, Concepto_Poliza, Tipo_Cambio, SatExportacion,
-                                                          Orden, RfcReceptor, Sucursal, Orden_Fecha, EsGlobal, Ultimo_Correo_Enviado,
-                                                          Rel_Global, Base_Iva16, Base_Iva0, Pago_Total_Vale
-                                                      ) VALUES (
-                                                          @IdCfdi, @Serie, @Folio, @IdCliente, @UsoCfdi, @Moneda,
-                                                          @TipoDeComprobante, @VersionCfdi, 0, '', '', @EsPrueba,
-                                                          @SubTotal, @Total, @FormaPago, @MetodoPago, @SatTipoRelacion, @UuidRelacionados,
-                                                          1, @Fecha, @IvaImporte, '', @TipoCambio, @SatExportacion,
-                                                          @Orden, @RfcReceptor, @Sucursal, @OrdenFecha, '', '',
-                                                          @RelGlobal, @BaseIva16, @BaseIva0, @PagoTotalVale
-                                                      )";
+                const string sqlInsertCfdiFactura = @"INSERT INTO CFDI_Factura (idCFDI, Serie, Folio, idCliente, UsoCFDI, Moneda, TipoDeComprobante, Version_CFDI, Estatus_CFDI, Fecha_Timbre, uuid, Es_Prueba,
+                        Sub_Total, Total, Forma_Pago, Metodo_Pago, Sat_Tipo_Relacion, UUID_Relacionados, Tipo_Documento, Fecha, Iva_Importe, Concepto_Poliza, Tipo_Cambio, SatExportacion,
+                        Orden, RfcReceptor, Sucursal, Orden_Fecha, EsGlobal, Ultimo_Correo_Enviado, Rel_Global, Base_Iva16, Base_Iva0, Pago_Total_Vale)
+                    VALUES (@IdCfdi, @Serie, @Folio, @IdCliente, @UsoCfdi, @Moneda, @TipoDeComprobante, @VersionCfdi, 0, '', '', @EsPrueba,
+                        @SubTotal, @Total, @FormaPago, @MetodoPago, @SatTipoRelacion, @UuidRelacionados, 1, @Fecha, @IvaImporte, '', @TipoCambio, @SatExportacion,
+                        @Orden, @RfcReceptor, @Sucursal, @OrdenFecha, '', '', @RelGlobal, @BaseIva16, @BaseIva0, @PagoTotalVale)";
 
                 string idCfdiNc = string.Empty;
                 int folioNcFinal = 0;
@@ -398,7 +272,7 @@ namespace FacturacionAPI.Repositories
                     await conn.ExecuteAsync(sqlInsertCfdiFactura, ConstruirParametrosCfdi(idCfdiNc, firmado.NotaCredito), tx);
 
                     const string sqlInsertRelacionados = @"INSERT INTO CFDI_Relacionados (idCFDI, UUID_Rel, satTipoRelacion)
-                                                           VALUES (@IdCfdi, @UuidRel, '01')";
+                        VALUES (@IdCfdi, @UuidRel, '01')";
 
                     foreach (string uuidRel in partidasGlobales
                         .Select(p => p.Uuid.Trim())
@@ -412,7 +286,7 @@ namespace FacturacionAPI.Repositories
                     }
 
                     const string sqlInsertCfdiDetalle = @"INSERT INTO CFDI_Detalle (idCFDI, sec, idOrdenes)
-                                                          VALUES (@IdCfdi, @Sec, @IdOrdenes)";
+                        VALUES (@IdCfdi, @Sec, @IdOrdenes)";
 
                     int sec = 0;
                     foreach (var partidaGlobal in partidasGlobales)
@@ -431,16 +305,9 @@ namespace FacturacionAPI.Repositories
                 string idCfdiFactura = ConstruirIdCfdi(firmado.Factura.Serie, firmado.Factura.Folio);
                 await conn.ExecuteAsync(sqlInsertCfdiFactura, ConstruirParametrosCfdi(idCfdiFactura, firmado.Factura), tx);
 
-                const string sqlActualizarOrden = @"UPDATE Ordenes
-                                                    SET idCFDI = @IdCfdi,
-                                                        uuid = ''
-                                                    WHERE Sucursal = @Sucursal
-                                                      AND Fecha = @Fecha
-                                                      AND Orden = @Orden
-                                                      AND Turno = @Turno
-                                                      AND Numero = @Numero
-                                                      AND Tipo = @Tipo
-                                                      AND ISNULL(Baja, '') <> '*'";
+                const string sqlActualizarOrden = @"UPDATE Ordenes SET idCFDI = @IdCfdi, uuid = ''
+                    WHERE Sucursal = @Sucursal AND Fecha = @Fecha AND Orden = @Orden
+                      AND Turno = @Turno AND Numero = @Numero AND Tipo = @Tipo AND ISNULL(Baja, '') <> '*'";
 
                 foreach (var partida in partidasDetalle)
                 {

@@ -32,9 +32,7 @@ namespace FacturacionAPI.Repositories
         {
             using IDbConnection conn = _dbConnectionData.CreateConnection();
             const string sql = @"SELECT TOP 1 Numero_Cliente, Razon_Social, Mail, Contraseña, Telefono
-                                 FROM Cliente_Acceso
-                                 WHERE (Mail = @Usuario OR Telefono = @Usuario)
-                                   AND Contraseña <> ''";
+                FROM Cliente_Acceso WHERE (Mail = @Usuario OR Telefono = @Usuario) AND Contraseña <> ''";
             return await conn.QueryFirstOrDefaultAsync<ClienteAcceso>(sql, new { Usuario = usuario.Trim() });
         }
 
@@ -73,18 +71,13 @@ namespace FacturacionAPI.Repositories
             try
             {
                 const string sqlAcceso = @"INSERT INTO Cliente_Acceso (Numero_Cliente, Razon_Social, Mail, Contraseña, Telefono)
-                                           VALUES (@Numero_Cliente, @Razon_Social, @Mail, @Contraseña, @Telefono)";
+                    VALUES (@Numero_Cliente, @Razon_Social, @Mail, @Contraseña, @Telefono)";
                 await conn.ExecuteAsync(sqlAcceso, acceso, transaction);
 
-                const string sqlCliente = @"INSERT INTO Clientes (
-                                                Numero_Cliente, Razon_Social, RFC, Direccion, Numero_Ext, Numero_Int,
-                                                Colonia, Ciudad, Delegacion, Estado, Codigo_Postal, CP, Telefono, Contraseña,
-                                                SAT_RegimenFiscal, SAT_FORMA_PAGO, Sat_Uso_Cfdi, ValidadoReceptor
-                                            ) VALUES (
-                                                @Numero_Cliente, @Razon_Social, @RFC, @Direccion, @Numero_Ext, @Numero_Int,
-                                                @Colonia, @Ciudad, @Delegacion, @Estado, @Codigo_Postal, @Codigo_Postal, @Telefono, @Contraseña,
-                                                @SAT_RegimenFiscal, @SAT_FORMA_PAGO, @Sat_Uso_Cfdi, @ValidadoReceptor
-                                            )";
+                const string sqlCliente = @"INSERT INTO Clientes (Numero_Cliente, Razon_Social, RFC, Direccion, Numero_Ext, Numero_Int, Colonia, Ciudad, Delegacion,
+                        Estado, Codigo_Postal, CP, Telefono, Contraseña, SAT_RegimenFiscal, SAT_FORMA_PAGO, Sat_Uso_Cfdi, ValidadoReceptor)
+                    VALUES (@Numero_Cliente, @Razon_Social, @RFC, @Direccion, @Numero_Ext, @Numero_Int, @Colonia, @Ciudad, @Delegacion,
+                        @Estado, @Codigo_Postal, @Codigo_Postal, @Telefono, @Contraseña, @SAT_RegimenFiscal, @SAT_FORMA_PAGO, @Sat_Uso_Cfdi, @ValidadoReceptor)";
                 await conn.ExecuteAsync(sqlCliente, new
                 {
                     cliente.Numero_Cliente,
@@ -120,11 +113,8 @@ namespace FacturacionAPI.Repositories
         {
             using IDbConnection conn = _dbConnectionData.CreateConnection();
             const string sql = @"SELECT TOP 1 a.Numero_Cliente AS NumeroCliente, a.RFC, b.Mail, a.Razon_Social AS RazonSocial
-                                 FROM Clientes a
-                                 INNER JOIN Cliente_Acceso b ON a.Numero_Cliente = b.Numero_Cliente
-                                 WHERE a.Numero_Cliente > 0
-                                   AND b.Mail = @Mail
-                                   AND a.RFC = @RFC";
+                FROM Clientes a INNER JOIN Cliente_Acceso b ON a.Numero_Cliente = b.Numero_Cliente
+                WHERE a.Numero_Cliente > 0 AND b.Mail = @Mail AND a.RFC = @RFC";
             return await conn.QueryFirstOrDefaultAsync<CuentaRecuperacionValidaDto>(sql, new
             {
                 RFC = rfc.Trim().ToUpperInvariant(),
