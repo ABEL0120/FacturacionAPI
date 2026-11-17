@@ -26,6 +26,8 @@ namespace FacturacionAPI.Models
         public string Serie_NotaCredito { get; set; } = string.Empty;
         public string Directorio_CFDI { get; set; } = string.Empty;
         public int Factura_FolioInicio { get; set; }
+        public string Mail { get; set; } = string.Empty;
+        public string Mail_Contrasena { get; set; } = string.Empty;
     }
 }
 

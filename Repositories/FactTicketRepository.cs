@@ -84,7 +84,8 @@ namespace FacturacionAPI.Repositories
                     RTRIM(ISNULL(a.Ciudad, '')) AS Ciudad, RTRIM(ISNULL(a.Estado, '')) AS Estado, RTRIM(ISNULL(a.Pais, '')) AS Pais, RTRIM(ISNULL(a.CP, '')) AS CP,
                     RTRIM(ISNULL(a.CveRegimenFiscal, '')) AS CveRegimenFiscal, RTRIM(ISNULL(b.Descripcion, '')) AS RegimenFiscalDesc, RTRIM(ISNULL(a.Numero_Certificado, '')) AS Numero_Certificado, RTRIM(ISNULL(a.Ubica_Certificado, '')) AS Ubica_Certificado,
                     RTRIM(ISNULL(a.Ubica_Llave, '')) AS Ubica_Llave, RTRIM(ISNULL(a.A_Password, '')) AS A_Password, RTRIM(ISNULL(a.Timbrado_Password, '')) AS Timbrado_Password, RTRIM(ISNULL(a.Prueba, 'N')) AS Prueba,
-                    RTRIM(ISNULL(a.Serie_Factura, '')) AS Serie_Factura, RTRIM(ISNULL(a.Serie_NotaCredito, '')) AS Serie_NotaCredito, RTRIM(ISNULL(a.Directorio_CFDI, '')) AS Directorio_CFDI, ISNULL(a.Factura_FolioInicio, 1) AS Factura_FolioInicio
+                    RTRIM(ISNULL(a.Serie_Factura, '')) AS Serie_Factura, RTRIM(ISNULL(a.Serie_NotaCredito, '')) AS Serie_NotaCredito, RTRIM(ISNULL(a.Directorio_CFDI, '')) AS Directorio_CFDI, ISNULL(a.Factura_FolioInicio, 1) AS Factura_FolioInicio,
+                    RTRIM(ISNULL(a.Mail, '')) AS Mail, RTRIM(ISNULL(a.[Mail_Contraseña], '')) AS Mail_Contrasena
                 FROM [Compañias] a LEFT JOIN SAT_REGIMEN_FISCAL b ON a.CveRegimenFiscal = b.Numero";
             return await conn.QueryFirstOrDefaultAsync<Compania>(sql);
         }
