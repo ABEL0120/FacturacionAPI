@@ -20,6 +20,8 @@ namespace FacturacionAPI.DTOs
     public class ValidarTicketsRequestDto
     {
         [Required(ErrorMessage = "Debe enviar al menos un ticket.")]
+        [MinLength(1, ErrorMessage = "Debe enviar al menos un ticket.")]
+        [MaxLength(1, ErrorMessage = "Solo se permite incluir 1 ticket por factura.")]
         public List<ConsultarTicketRequestDto> Tickets { get; set; } = new();
 
         public int? NumeroCliente { get; set; }
@@ -71,6 +73,9 @@ namespace FacturacionAPI.DTOs
         public string Fecha { get; set; } = string.Empty;
         public string FormaPagoSat { get; set; } = string.Empty;
         public string FormaPagoDescripcion { get; set; } = string.Empty;
+        public string Moneda { get; set; } = "MXN";
+        public string MonedaDescripcion { get; set; } = "Peso Mexicano";
+        public decimal TipoCambio { get; set; } = 1.0000m;
         public bool RequiereNotaCredito { get; set; }
         public string UuidGlobal { get; set; } = string.Empty;
         public decimal Subtotal { get; set; }
@@ -87,6 +92,9 @@ namespace FacturacionAPI.DTOs
         public string SerieFactura { get; set; } = string.Empty;
         public string FormaPagoSat { get; set; } = string.Empty;
         public string FormaPagoDescripcion { get; set; } = string.Empty;
+        public string Moneda { get; set; } = "MXN";
+        public string MonedaDescripcion { get; set; } = "Peso Mexicano";
+        public decimal TipoCambio { get; set; } = 1.0000m;
         public bool RequiereNotaCredito { get; set; }
         public decimal SubtotalTotal { get; set; }
         public decimal IvaTotal { get; set; }
@@ -232,6 +240,8 @@ namespace FacturacionAPI.DTOs
         public string? Estado { get; set; }
 
         [Required(ErrorMessage = "Debe incluir al menos un ticket.")]
+        [MinLength(1, ErrorMessage = "Debe incluir al menos un ticket.")]
+        [MaxLength(1, ErrorMessage = "Solo se permite incluir 1 ticket por comprobante.")]
         public List<TicketSeleccionadoDto> Tickets { get; set; } = new();
     }
 

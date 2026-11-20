@@ -134,6 +134,15 @@ namespace FacturacionAPI.Services
                 };
             }
 
+            if (dto.Tickets.Count > 1)
+            {
+                return new ApiResponse<ValidarTicketsResponseDto>
+                {
+                    Success = false,
+                    Message = "Solo se permite agregar 1 ticket por factura."
+                };
+            }
+
             string mailUsuario = await ResolverMailUsuarioAsync(dto.MailUsuario, dto.NumeroCliente);
             var validacion = await ValidarGrupoTicketsAsync(dto.Tickets, dto.NumeroCliente, mailUsuario);
             if (!validacion.Success || validacion.Response == null)
@@ -379,6 +388,15 @@ namespace FacturacionAPI.Services
                 };
             }
 
+            if (dto.Tickets.Count > 1)
+            {
+                return new ApiResponse<FacturaTicketResponseDto>
+                {
+                    Success = false,
+                    Message = "Solo se permite facturar 1 ticket por comprobante."
+                };
+            }
+
             string rfc = QuitaDobleEspacio(dto.RFC).ToUpperInvariant();
             if (string.IsNullOrWhiteSpace(rfc) || !EsRfcValido(rfc))
             {
@@ -386,27 +404,6 @@ namespace FacturacionAPI.Services
                 {
                     Success = false,
                     Message = "RFC inválida."
-                };
-            }
-
-            string monedaClave = string.IsNullOrWhiteSpace(dto.Moneda) ? "MXN" : dto.Moneda.Trim().ToUpperInvariant();
-            var moneda = await _catalogosSatRepository.ObtenerMonedaPorNumeroAsync(monedaClave);
-            if (moneda == null)
-            {
-                return new ApiResponse<FacturaTicketResponseDto>
-                {
-                    Success = false,
-                    Message = "La moneda seleccionada no existe en el catálogo SAT."
-                };
-            }
-
-            decimal tipoCambio = monedaClave == "MXN" ? 1.0000m : dto.TipoCambio;
-            if (monedaClave != "MXN" && tipoCambio <= 0)
-            {
-                return new ApiResponse<FacturaTicketResponseDto>
-                {
-                    Success = false,
-                    Message = "Tipo de cambio inválido."
                 };
             }
 
@@ -489,6 +486,21 @@ namespace FacturacionAPI.Services
                     Message = validacion.Message
                 };
             }
+
+            string monedaClave = string.IsNullOrWhiteSpace(validacion.Response.Moneda)
+                ? "MXN"
+                : validacion.Response.Moneda.Trim().ToUpperInvariant();
+            var moneda = await _catalogosSatRepository.ObtenerMonedaPorNumeroAsync(monedaClave)
+                ?? new MonedaCatalogoDto
+                {
+                    Numero = monedaClave,
+                    Descripcion = string.IsNullOrWhiteSpace(validacion.Response.MonedaDescripcion)
+                        ? "Peso Mexicano"
+                        : validacion.Response.MonedaDescripcion
+                };
+            decimal tipoCambio = monedaClave == "MXN"
+                ? 1.0000m
+                : (validacion.Response.TipoCambio > 0 ? validacion.Response.TipoCambio : 1.0000m);
 
             if (validacion.Response.GranTotal <= 0)
             {
@@ -1193,12 +1205,32 @@ namespace FacturacionAPI.Services
                 };
             }
 
-            if (dto.Total.HasValue && dto.Total.Value < 0)
+            if (dto.Transaccion.HasValue && dto.Transaccion.Value <= 0)
+            {
+                return new ApiResponse<TicketConsultaResponseDto>
+                {
+                    Success = false,
+                    Message = "Capture una Transacción válida mayor a 0."
+                };
+            }
+
+            if (dto.Total.HasValue && dto.Total.Value <= 0)
             {
                 return new ApiResponse<TicketConsultaResponseDto>
                 {
                     Success = false,
                     Message = "Capture un Total válido mayor a 0."
+                };
+            }
+
+            bool tieneTransaccion = dto.Transaccion.HasValue && dto.Transaccion.Value > 0;
+            bool tieneTotal = dto.Total.HasValue && dto.Total.Value > 0;
+            if (!tieneTransaccion && !tieneTotal)
+            {
+                return new ApiResponse<TicketConsultaResponseDto>
+                {
+                    Success = false,
+                    Message = "Capture la Transacción, el Total del ticket o ambos."
                 };
             }
 
@@ -1214,11 +1246,13 @@ namespace FacturacionAPI.Services
 
             var todasPartidas = await _factTicketRepository.ObtenerPartidasPorFoliosCandidatosAsync(
                 foliosCandidatos.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
-                dto.Transaccion);
+                tieneTransaccion ? dto.Transaccion : null);
 
             if (todasPartidas.Count == 0 && long.TryParse(folio, out long ordenNumero))
             {
-                todasPartidas = await _factTicketRepository.ObtenerPartidasPorOrdenAsync(ordenNumero, dto.Transaccion);
+                todasPartidas = await _factTicketRepository.ObtenerPartidasPorOrdenAsync(
+                    ordenNumero,
+                    tieneTransaccion ? dto.Transaccion : null);
             }
 
             if (todasPartidas.Count == 0)
@@ -1251,11 +1285,40 @@ namespace FacturacionAPI.Services
                 .GroupBy(p => new { p.Sucursal, p.Fecha, p.Orden, p.Folio })
                 .ToList();
 
-            var grupoSeleccionado = gruposTicket.Count == 1
-                ? gruposTicket[0].ToList()
-                : (dto.Total.HasValue && dto.Total.Value > 0
-                    ? (gruposTicket.FirstOrDefault(g => Math.Abs(g.Sum(x => x.Total) - dto.Total.Value) <= 0.05m) ?? gruposTicket[0])
-                    : gruposTicket[0]).ToList();
+            List<OrdenTicketDetalle>? grupoSeleccionado;
+            if (gruposTicket.Count == 1)
+            {
+                grupoSeleccionado = gruposTicket[0].ToList();
+            }
+            else if (tieneTotal)
+            {
+                var coincidenciaTotal = gruposTicket.FirstOrDefault(g =>
+                {
+                    var itemsFacturables = g.Where(x =>
+                        x.Baja.Trim() != "*" &&
+                        !x.Tipo.Trim().Equals("Servicio", StringComparison.OrdinalIgnoreCase)).ToList();
+                    decimal totalGrupo = Math.Round(
+                        (itemsFacturables.Count > 0 ? itemsFacturables : g.ToList()).Sum(x => x.Total),
+                        2,
+                        MidpointRounding.AwayFromZero);
+                    return Math.Abs(totalGrupo - dto.Total!.Value) <= 0.05m;
+                });
+
+                if (coincidenciaTotal == null)
+                {
+                    return new ApiResponse<TicketConsultaResponseDto>
+                    {
+                        Success = false,
+                        Message = "No se encontró un ticket que coincida con el Folio y Total capturados."
+                    };
+                }
+
+                grupoSeleccionado = coincidenciaTotal.ToList();
+            }
+            else
+            {
+                grupoSeleccionado = gruposTicket[0].ToList();
+            }
 
             if (grupoSeleccionado.All(p => p.Baja.Trim() == "*"))
             {
@@ -1354,6 +1417,14 @@ namespace FacturacionAPI.Services
                 !string.IsNullOrWhiteSpace(p.Uuid) &&
                 p.EsGlobal.Trim().Equals("S", StringComparison.OrdinalIgnoreCase));
 
+            var monedaCatalogo = await _catalogosSatRepository.ObtenerMonedaPorNumeroAsync("MXN");
+            string monedaTicket = !string.IsNullOrWhiteSpace(monedaCatalogo?.Numero)
+                ? monedaCatalogo.Numero.Trim().ToUpperInvariant()
+                : "MXN";
+            string monedaDescripcion = !string.IsNullOrWhiteSpace(monedaCatalogo?.Descripcion)
+                ? QuitaDobleEspacio(monedaCatalogo.Descripcion)
+                : "Peso Mexicano";
+
             var response = new TicketConsultaResponseDto
             {
                 Folio = first.Folio.Trim(),
@@ -1365,6 +1436,9 @@ namespace FacturacionAPI.Services
                 Fecha = first.Fecha.Trim(),
                 FormaPagoSat = formaPagoSat,
                 FormaPagoDescripcion = formaPagoDesc,
+                Moneda = monedaTicket,
+                MonedaDescripcion = monedaDescripcion,
+                TipoCambio = 1.0000m,
                 RequiereNotaCredito = requiereNc,
                 UuidGlobal = first.UuidGlobal.Trim(),
                 Subtotal = subtotalTicket,
@@ -1387,6 +1461,11 @@ namespace FacturacionAPI.Services
             int? numeroCliente,
             string mailUsuario)
         {
+            if (solicitudes.Count > 1)
+            {
+                return (false, "Solo se permite agregar 1 ticket por factura.", null, new List<OrdenTicketDetalle>());
+            }
+
             var foliosVistos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var todasDetalle = new List<OrdenTicketDetalle>();
             int sucursalBase = 0;
@@ -1394,6 +1473,9 @@ namespace FacturacionAPI.Services
             string serieFactura = string.Empty;
             string formaPagoSat = string.Empty;
             string formaPagoDesc = string.Empty;
+            string monedaTicket = "MXN";
+            string monedaDesc = "Peso Mexicano";
+            decimal tipoCambio = 1.0000m;
             bool requiereNc = false;
 
             foreach (var sol in solicitudes)
@@ -1425,6 +1507,9 @@ namespace FacturacionAPI.Services
                     serieFactura = consulta.Data.SerieFacturaSucursal;
                     formaPagoSat = consulta.Data.FormaPagoSat;
                     formaPagoDesc = consulta.Data.FormaPagoDescripcion;
+                    monedaTicket = consulta.Data.Moneda;
+                    monedaDesc = consulta.Data.MonedaDescripcion;
+                    tipoCambio = consulta.Data.TipoCambio > 0 ? consulta.Data.TipoCambio : 1.0000m;
                 }
                 else if (consulta.Data.Sucursal != sucursalBase)
                 {
@@ -1458,6 +1543,9 @@ namespace FacturacionAPI.Services
                 SerieFactura = serieFactura,
                 FormaPagoSat = formaPagoSat,
                 FormaPagoDescripcion = formaPagoDesc,
+                Moneda = monedaTicket,
+                MonedaDescripcion = monedaDesc,
+                TipoCambio = tipoCambio,
                 RequiereNotaCredito = requiereNc,
                 SubtotalTotal = Math.Round(todasDetalle.Sum(p => p.Subtotal), 2, MidpointRounding.AwayFromZero),
                 IvaTotal = Math.Round(todasDetalle.Sum(p => p.ImpIva), 2, MidpointRounding.AwayFromZero),

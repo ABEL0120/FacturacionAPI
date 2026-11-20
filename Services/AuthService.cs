@@ -128,6 +128,16 @@ namespace FacturacionAPI.Services
             string contrasena = (dto.Contraseña ?? string.Empty).Trim();
             string confirmar = (dto.ConfirmarContraseña ?? string.Empty).Trim();
 
+            string? errorContrasena = ValidarPasswordRegistro(contrasena);
+            if (errorContrasena != null)
+            {
+                return new ApiResponse<LoginResponseDto>
+                {
+                    Success = false,
+                    Message = errorContrasena
+                };
+            }
+
             if (!string.Equals(contrasena, confirmar, StringComparison.Ordinal))
             {
                 return new ApiResponse<LoginResponseDto>
@@ -330,6 +340,46 @@ namespace FacturacionAPI.Services
                 Message = actualizado ? "Contraseña actualizada exitosamente." : "Error al actualizar contraseña.",
                 Data = actualizado
             };
+        }
+
+        private static string? ValidarPasswordRegistro(string password)
+        {
+            if (string.IsNullOrEmpty(password) || password.Length < 8 || password.Length > 13)
+            {
+                return "La contraseña debe tener entre 8 y 13 caracteres.";
+            }
+
+            bool tieneMayuscula = false;
+            bool tieneMinuscula = false;
+            bool tieneNumero = false;
+            bool tieneEspecial = false;
+
+            foreach (char c in password)
+            {
+                if (c is >= 'A' and <= 'Z')
+                {
+                    tieneMayuscula = true;
+                }
+                else if (c is >= 'a' and <= 'z')
+                {
+                    tieneMinuscula = true;
+                }
+                else if (c is >= '0' and <= '9')
+                {
+                    tieneNumero = true;
+                }
+                else if ("#*$!@&%".Contains(c))
+                {
+                    tieneEspecial = true;
+                }
+            }
+
+            if (!tieneMayuscula || !tieneMinuscula || !tieneNumero || !tieneEspecial)
+            {
+                return "La contraseña debe incluir al menos 1 mayúscula, 1 minúscula, 1 número y 1 carácter especial (# * $ ! @ & %).";
+            }
+
+            return null;
         }
     }
 }

@@ -54,7 +54,8 @@ namespace FacturacionAPI.DTOs
         public string Mail { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "La contraseña es obligatoria.")]
-        [StringLength(13, MinimumLength = 3, ErrorMessage = "La contraseña debe tener entre 3 y 13 caracteres.")]
+        [StringLength(13, MinimumLength = 8, ErrorMessage = "La contraseña debe tener entre 8 y 13 caracteres.")]
+        [RegularExpression(@"^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[#*$!@&%]).{8,13}$", ErrorMessage = "La contraseña debe tener entre 8 y 13 caracteres e incluir al menos 1 mayúscula, 1 minúscula, 1 número y 1 carácter especial (# * $ ! @ & %).")]
         public string Contraseña
         {
             get => _contrasena;
